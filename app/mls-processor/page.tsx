@@ -8,9 +8,25 @@ import { LogsPanel } from "./components/LogsPanel";
 import { ResultsTable } from "./components/ResultsTable";
 import { ColumnDetection } from "./components/ColumnDetection";
 import { useMLSProcessor } from "./hooks/useMLSProcessor";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function MLSProcessorPage() {
+  // State for clear confirmation modal
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearModalData, setClearModalData] = useState<{
+    fileName: string;
+    currentIndex: number;
+    totalAddresses: number;
+    timestamp: number;
+    stats: {
+      successRate: string;
+      totalProcessed: number;
+      mapboxCount: number;
+      geoapifyCount: number;
+      geminiCount: number;
+    };
+  } | null>(null);
+
   const {
     stats,
     logs,
@@ -27,6 +43,7 @@ export default function MLSProcessorPage() {
     stopProcessing,
     // Recovery functions
     showRecoveryDialog,
+    setShowRecoveryDialog,
     recoveryData,
     continueFromProgress,
     discardProgress,
@@ -47,6 +64,26 @@ export default function MLSProcessorPage() {
           }
         : null,
     });
+  }, [showRecoveryDialog, recoveryData]);
+
+  // Additional debug effect to monitor localStorage changes
+  useEffect(() => {
+    const checkLocalStoragePeriodically = () => {
+      const saved = localStorage.getItem("mls_processing_progress");
+      if (saved && !showRecoveryDialog && !recoveryData) {
+        console.log(
+          "⚠️ Found localStorage data but no recovery dialog shown!",
+          {
+            hasData: !!saved,
+            showRecoveryDialog,
+            hasRecoveryData: !!recoveryData,
+          }
+        );
+      }
+    };
+
+    const interval = setInterval(checkLocalStoragePeriodically, 3000);
+    return () => clearInterval(interval);
   }, [showRecoveryDialog, recoveryData]);
 
   return (
@@ -79,19 +116,47 @@ export default function MLSProcessorPage() {
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => {
-                // Simulate saved progress for testing
+                // Check if there's real recovery data in localStorage
+                const saved = localStorage.getItem("mls_processing_progress");
+                if (saved) {
+                  try {
+                    const data = JSON.parse(saved);
+                    console.log("📋 Found real recovery data:", data);
+
+                    // Show the existing recovery dialog
+                    window.location.reload();
+                  } catch (error) {
+                    console.error("❌ Error parsing saved data:", error);
+                    alert("Found corrupted recovery data. Clearing...");
+                    localStorage.removeItem("mls_processing_progress");
+                  }
+                } else {
+                  alert(
+                    "No previous session found. Process a file first to see recovery functionality."
+                  );
+                }
+              }}
+              className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded text-sm cursor-pointer"
+            >
+              📋 Show Last Session
+            </button>
+
+            {/* Temporary Demo Button for debugging */}
+            <button
+              onClick={() => {
+                // Generate test data for debugging recovery
                 const testData = {
                   results: [],
-                  currentIndex: 15,
+                  currentIndex: 25,
                   totalAddresses: 100,
-                  fileName: "test_file.xlsx",
+                  fileName: `real_file_debug.xlsx`,
                   timestamp: Date.now(),
                   stats: {
-                    totalProcessed: 15,
-                    successRate: "80%",
-                    mapboxCount: 15,
-                    geoapifyCount: 0,
-                    geminiCount: 0,
+                    totalProcessed: 25,
+                    successRate: "85%",
+                    mapboxCount: 25,
+                    geoapifyCount: 2,
+                    geminiCount: 20,
                   },
                   detectedColumns: {
                     address: "Address",
@@ -105,12 +170,17 @@ export default function MLSProcessorPage() {
                   "mls_processing_progress",
                   JSON.stringify(testData)
                 );
-                console.log("🧪 Test data saved to localStorage");
-                window.location.reload();
+                console.log(
+                  "🧪 Debug data created for recovery test:",
+                  testData
+                );
+                alert(
+                  "Debug data created. Close and reopen tab to test recovery."
+                );
               }}
-              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm"
+              className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded text-sm cursor-pointer hidden"
             >
-              🧪 Simulate Saved Progress
+              🧪 Create Test Data
             </button>
 
             <button
@@ -123,20 +193,40 @@ export default function MLSProcessorPage() {
                     : "No data in localStorage"
                 );
               }}
-              className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded text-sm"
+              className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded text-sm cursor-pointer"
             >
               🔍 Check localStorage
             </button>
 
             <button
               onClick={() => {
-                localStorage.clear();
-                console.log("🗑️ localStorage cleared");
-                alert("localStorage cleared");
+                console.log("🔄 Forcing recovery check...");
+                window.location.reload();
               }}
-              className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm"
+              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm cursor-pointer hidden"
             >
-              🗑️ Clear localStorage
+              🔄 Force Recovery Check
+            </button>
+
+            <button
+              onClick={() => {
+                // Get current localStorage data before showing confirmation
+                const saved = localStorage.getItem("mls_processing_progress");
+                if (saved) {
+                  try {
+                    const data = JSON.parse(saved);
+                    setClearModalData(data);
+                  } catch {
+                    setClearModalData(null);
+                  }
+                } else {
+                  setClearModalData(null);
+                }
+                setShowClearModal(true);
+              }}
+              className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm cursor-pointer"
+            >
+              🗑️ Clear Cache
             </button>
           </div>
 
@@ -148,9 +238,21 @@ export default function MLSProcessorPage() {
             <p>
               <strong>Recovery Data:</strong>{" "}
               {recoveryData
-                ? `Found (${recoveryData.currentIndex}/${recoveryData.totalAddresses})`
+                ? `Found (${recoveryData.currentIndex}/${
+                    recoveryData.totalAddresses
+                  }) - ${
+                    recoveryData.fileName.includes("demo_file") ||
+                    recoveryData.fileName.includes("test_file")
+                      ? "🧪 Demo Session"
+                      : "📄 Real Session"
+                  }`
                 : "None"}
             </p>
+            {recoveryData && (
+              <p>
+                <strong>File:</strong> {recoveryData.fileName}
+              </p>
+            )}
           </div>
         </div>
 
@@ -179,10 +281,146 @@ export default function MLSProcessorPage() {
           onClearResults={clearResults}
         />
 
+        {/* Clear Cache Confirmation Modal */}
+        {showClearModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-8 max-w-lg mx-4 shadow-2xl relative">
+              {/* Close X button */}
+              <button
+                onClick={() => setShowClearModal(false)}
+                className="absolute top-3 right-3 bg-gray-500 hover:bg-gray-600 text-white rounded-full w-8 h-8 flex items-center justify-center transition-colors cursor-pointer shadow-lg"
+                title="Close dialog"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+
+              <div className="text-center mb-6">
+                <div className="text-6xl mb-4">⚠️</div>
+                <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                  Clear All Cache & Data
+                </h2>
+                <p className="text-gray-600">
+                  This will permanently delete all cached data and processing
+                  progress.
+                </p>
+              </div>
+
+              {clearModalData ? (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                  <h3 className="font-semibold text-yellow-800 mb-3">
+                    📋 Current Session Data:
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">File:</span>
+                      <span className="text-gray-900">
+                        {clearModalData.fileName}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">
+                        Progress:
+                      </span>
+                      <span className="text-green-600">
+                        {clearModalData.currentIndex} /{" "}
+                        {clearModalData.totalAddresses}(
+                        {Math.round(
+                          (clearModalData.currentIndex /
+                            clearModalData.totalAddresses) *
+                            100
+                        )}
+                        %)
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">Date:</span>
+                      <span className="text-gray-600">
+                        {new Date(clearModalData.timestamp).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">
+                        Success Rate:
+                      </span>
+                      <span className="text-blue-600">
+                        {clearModalData.stats.successRate}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                  <p className="text-gray-600 text-center">
+                    📭 No processing session data found
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    localStorage.clear();
+                    console.log("🗑️ All localStorage data cleared");
+                    setShowClearModal(false);
+                    setShowRecoveryDialog(false);
+                    // Reload page to reset everything
+                    setTimeout(() => {
+                      window.location.reload();
+                    }, 300);
+                  }}
+                  className="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer"
+                >
+                  🗑️ Delete All Data
+                </button>
+
+                <button
+                  onClick={() => setShowClearModal(false)}
+                  className="w-full bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer"
+                >
+                  ❌ Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Recovery Dialog */}
         {showRecoveryDialog && recoveryData && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-8 max-w-md mx-4 shadow-2xl">
+            <div className="bg-white rounded-xl p-8 max-w-md mx-4 shadow-2xl relative">
+              {/* Close X button */}
+              <button
+                onClick={() => setShowRecoveryDialog(false)}
+                className="absolute top-3 right-3 bg-red-500 hover:bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center transition-colors cursor-pointer shadow-lg"
+                title="Close dialog"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+
               <div className="text-center mb-6">
                 <div className="text-6xl mb-4">🔄</div>
                 <h2 className="text-2xl font-bold text-gray-800 mb-2">

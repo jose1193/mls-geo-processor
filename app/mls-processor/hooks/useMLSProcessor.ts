@@ -62,7 +62,7 @@ export interface FileData {
 // Constants
 const DELAY_BETWEEN_REQUESTS = 1100;
 const GEMINI_DELAY = 2000;
-const SAVE_INTERVAL = 25; // Auto-save every 25 processed records
+const SAVE_INTERVAL = 5; // Auto-save every 5 processed records (more frequent)
 const STORAGE_KEY = "mls_processing_progress";
 const CACHE_KEY = "mls_address_cache";
 const GEMINI_CACHE_KEY = "mls_gemini_cache"; // Separate cache for Gemini results
@@ -188,14 +188,16 @@ export function useMLSProcessor() {
           return;
         }
 
+        console.log("✅ localStorage is available, checking for saved data...");
         const saved = localStorage.getItem(STORAGE_KEY);
         console.log(
-          "🔍 Checking for saved progress...",
-          saved ? "Found data" : "No data"
+          "🔍 Checking for saved progress with key:",
+          STORAGE_KEY,
+          saved ? `Found data (${saved.length} chars)` : "No data"
         );
 
         if (saved) {
-          console.log("📄 Raw saved data length:", saved.length);
+          console.log("📄 Raw saved data:", saved.substring(0, 200) + "...");
 
           const data: ProcessingProgress = JSON.parse(saved);
           console.log("📄 Parsed recovery data:", {
@@ -208,8 +210,27 @@ export function useMLSProcessor() {
           });
 
           // Validate data structure
-          if (!data.currentIndex || !data.totalAddresses || !data.fileName) {
-            console.log("❌ Invalid data structure, removing...");
+          console.log("🔍 Validating data structure:", {
+            hasCurrentIndex:
+              data.currentIndex !== undefined && data.currentIndex !== null,
+            currentIndexValue: data.currentIndex,
+            hasTotalAddresses: !!data.totalAddresses,
+            totalAddressesValue: data.totalAddresses,
+            hasFileName: !!data.fileName,
+            fileNameValue: data.fileName,
+          });
+
+          if (
+            data.currentIndex === undefined ||
+            data.currentIndex === null ||
+            !data.totalAddresses ||
+            !data.fileName
+          ) {
+            console.log("❌ Invalid data structure, removing...", {
+              currentIndex: data.currentIndex,
+              totalAddresses: data.totalAddresses,
+              fileName: data.fileName,
+            });
             localStorage.removeItem(STORAGE_KEY);
             return;
           }
@@ -229,11 +250,23 @@ export function useMLSProcessor() {
           // Set recovery data first
           setRecoveryData(data);
 
-          // Show dialog with a small delay to ensure state is set
+          // Show dialog with multiple attempts
           setTimeout(() => {
-            console.log("📱 Showing recovery dialog...");
+            console.log("📱 Attempt 1: Showing recovery dialog...");
             setShowRecoveryDialog(true);
           }, 50);
+
+          setTimeout(() => {
+            console.log("📱 Attempt 2: Ensuring recovery dialog is shown...");
+            setShowRecoveryDialog(true);
+          }, 200);
+
+          setTimeout(() => {
+            console.log(
+              "📱 Attempt 3: Final attempt to show recovery dialog..."
+            );
+            setShowRecoveryDialog(true);
+          }, 1000);
 
           // Add log about recovery
           const recoveryLog: LogEntry = {
@@ -259,12 +292,72 @@ export function useMLSProcessor() {
 
     const timeoutId1 = setTimeout(checkRecovery, 100); // After 100ms
     const timeoutId2 = setTimeout(checkRecovery, 500); // After 500ms
+    const timeoutId3 = setTimeout(checkRecovery, 1000); // After 1s
+    const timeoutId4 = setTimeout(checkRecovery, 2000); // After 2s
 
     return () => {
       clearTimeout(timeoutId1);
       clearTimeout(timeoutId2);
+      clearTimeout(timeoutId3);
+      clearTimeout(timeoutId4);
     };
   }, []); // Empty dependency array to run only once on mount
+
+  // Separate useEffect for beforeunload listener to save progress when page closes
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      // Only save if there's active processing
+      if (isProcessing && results.length > 0 && fileData) {
+        console.log("🚨 Page closing during processing, saving progress...");
+
+        try {
+          // Get current stats
+          const currentStats = {
+            totalProcessed: results.length,
+            successRate: `${Math.round(
+              (results.filter((r) => r.status === "success").length /
+                results.length) *
+                100
+            )}%`,
+            mapboxCount: stats.mapboxCount,
+            geoapifyCount: stats.geoapifyCount,
+            geminiCount: stats.geminiCount,
+          };
+
+          // Save current progress
+          const progressData = {
+            results: results,
+            currentIndex: results.length,
+            totalAddresses: fileData.data.length,
+            fileName: fileData.fileName,
+            timestamp: Date.now(),
+            stats: currentStats,
+            detectedColumns: detectedColumns,
+            validAddresses: fileData.data,
+          };
+
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(progressData));
+          console.log(
+            `💾 Emergency save completed: ${results.length} results saved`
+          );
+        } catch (error) {
+          console.error("❌ Failed to emergency save:", error);
+        }
+
+        // Show browser warning
+        event.preventDefault();
+        event.returnValue =
+          "Processing in progress. Are you sure you want to leave?";
+        return "Processing in progress. Are you sure you want to leave?";
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [isProcessing, results, fileData, stats, detectedColumns]);
 
   // Monitor recovery state changes
   useEffect(() => {
@@ -1611,6 +1704,7 @@ Ejemplo de respuesta correcta:
     stopProcessing,
     // Recovery functions
     showRecoveryDialog,
+    setShowRecoveryDialog,
     recoveryData,
     continueFromProgress,
     discardProgress,
