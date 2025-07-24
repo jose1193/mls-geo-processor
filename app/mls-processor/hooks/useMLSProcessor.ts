@@ -112,6 +112,7 @@ export function useMLSProcessor() {
     null
   );
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   const addLog = useCallback(
     (message: string, type: LogEntry["type"] = "info") => {
@@ -1411,6 +1412,8 @@ Ejemplo de respuesta correcta:
           );
           // Clear progress cache when completed
           clearProgress();
+          // Show success modal
+          setShowSuccessModal(true);
         } else {
           // Save final progress if stopped
           saveProgress(
@@ -1709,5 +1712,8 @@ Ejemplo de respuesta correcta:
     continueFromProgress,
     discardProgress,
     downloadPartialResults,
+    // Success modal
+    showSuccessModal,
+    setShowSuccessModal,
   };
 }
