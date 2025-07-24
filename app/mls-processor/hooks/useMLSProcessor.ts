@@ -248,6 +248,33 @@ export function useMLSProcessor() {
             else if (id.startsWith("country")) country = item.text;
           });
 
+          // Extract house number using the robust strategy from Mapbox-2.html
+          let house_number = null;
+          let street_name = null;
+
+          // Strategy 1: Extract from original address using regex
+          const addressMatch = fullAddress.match(/^(\d+)\s+(.+?)(?:,|$)/);
+          if (addressMatch) {
+            house_number = addressMatch[1];
+            street_name = addressMatch[2].trim();
+          }
+
+          // Strategy 2: If not found, try from Mapbox formatted response
+          if (!house_number) {
+            const formattedMatch = feature.place_name.match(
+              /^(\d+)\s+(.+?)(?:,|$)/
+            );
+            if (formattedMatch) {
+              house_number = formattedMatch[1];
+              street_name = formattedMatch[2].trim();
+            }
+          }
+
+          // Strategy 3: Use street name from feature.text if available
+          if (!street_name && feature.text && !feature.text.match(/^\d/)) {
+            street_name = feature.text;
+          }
+
           return {
             success: true,
             formatted: feature.place_name,
@@ -264,7 +291,8 @@ export function useMLSProcessor() {
             accuracy: props.accuracy || null,
             mapbox_id: feature.id,
             full_context: context,
-            "House Number": feature.text?.split(" ")[0] || null,
+            "House Number": house_number,
+            street_name: street_name,
           };
         } else {
           return { success: false, error: "No results found" };
