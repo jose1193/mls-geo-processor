@@ -651,25 +651,29 @@ DIRECCIÓN A ANALIZAR: ${fullAddress}
 
 Debes proporcionar:
 1. **Vecindario general**: Área geográfica amplia dentro de la ciudad (ej: "Kendall Green", "Ives Estates", "Ocean Breeze")
-2. **Subdivisión/Comunidad específica**: Desarrollo inmobiliario, subdivisión o comunidad específica (ej: "Kendall Lake Addition", "Magnolia Gardens Consolid", "Pine Ridge At Delray Beach")
+2. **Subdivisión/Comunidad específica**: Desarrollo inmobiliario, subdivisión o comunidad específica (ej: "Kendall Lake", "Magnolia Gardens", "Pine Ridge At Delray Beach")
 
 INSTRUCCIONES ESPECÍFICAS:
 - Consulta bases de datos MLS 2025 fecha actual y registros de propiedad de Florida
-- Proporciona nombres exactos tal como aparecen en registros oficiales
-- Si una dirección tiene múltiples opciones, selecciona la más específica
-- Para subdivisiones, incluye números de sección si están disponibles
+- Proporciona SOLO el nombre principal de la comunidad/vecindario, SIN sufijos como:
+  * NO incluir: "Sec 1", "Section 2", "Phase 1A", "6th Sec", "Unit 1", "Addition", "Plat 1"
+  * CORRECTO: "Highland Lakes" (NO "Highland Lakes Sec 1")
+  * CORRECTO: "Presidential Estates" (NO "Presidential Estates 2")
+  * CORRECTO: "Cresthaven" (NO "Cresthaven 6th Sec")
+- Usa nombres comerciales limpios y principales tal como aparecen en marketing inmobiliario
+- Si una dirección tiene múltiples opciones, selecciona la más conocida comercialmente
 - Si no tienes datos específicos para algún campo, usa "No disponible"
 
 FORMATO DE RESPUESTA (JSON únicamente):
 {
-  "neighborhood": "nombre exacto del vecindario general",
-  "community": "nombre exacto de la subdivisión/comunidad específica"
+  "neighborhood": "nombre principal del vecindario general",
+  "community": "nombre principal de la subdivisión/comunidad específica"
 }
 
 Ejemplo de respuesta correcta:
 {
   "neighborhood": "Kendall Green",
-  "community": "Kendall Lake Addition"
+  "community": "Kendall Lake"
 }`;
 
       const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
@@ -811,6 +815,44 @@ Ejemplo de respuesta correcta:
                   community = null;
                 }
 
+                // Limpiar sufijos innecesarios de comunidades/vecindarios
+                const cleanCommunityName = (name: string): string => {
+                  if (!name) return name;
+
+                  // Patrones de sufijos a remover
+                  const suffixPatterns = [
+                    /\s+(Sec|Section)\s+\d+[A-Z]*/gi, // "Sec 1", "Section 2A"
+                    /\s+(Phase|Ph)\s+\d+[A-Z]*/gi, // "Phase 1A", "Ph 2B"
+                    /\s+\d+(st|nd|rd|th)\s+(Sec|Section)/gi, // "6th Sec", "1st Section"
+                    /\s+(Unit|Tract)\s+\d+[A-Z]*/gi, // "Unit 1", "Tract 2A"
+                    /\s+(Plat|Block)\s+\d+[A-Z]*/gi, // "Plat 1", "Block 2A"
+                    /\s+(Addition|Add)\s+\d*/gi, // "Addition 1", "Add"
+                    /\s+(Subdivision|Sub)\s+\d*/gi, // "Subdivision 1", "Sub"
+                    /\s+(Parcel|Lot)\s+\d+[A-Z]*/gi, // "Parcel 1A", "Lot 2B"
+                  ];
+
+                  let cleanName = name.trim();
+
+                  // Aplicar todos los patrones de limpieza
+                  suffixPatterns.forEach((pattern) => {
+                    cleanName = cleanName.replace(pattern, "");
+                  });
+
+                  // Limpiar espacios múltiples y trim final
+                  cleanName = cleanName.replace(/\s+/g, " ").trim();
+
+                  return cleanName;
+                };
+
+                // Aplicar limpieza a neighborhood y community
+                if (neighborhood) {
+                  neighborhood = cleanCommunityName(neighborhood);
+                }
+
+                if (community) {
+                  community = cleanCommunityName(community);
+                }
+
                 // Validar que tenemos al menos uno de los campos
                 if (!neighborhood && !community) {
                   const noDataResult = {
@@ -844,12 +886,53 @@ Ejemplo de respuesta correcta:
                 );
 
                 if (neighborhoodMatch || communityMatch) {
+                  // Limpiar sufijos innecesarios de comunidades/vecindarios
+                  const cleanCommunityName = (name: string): string => {
+                    if (!name) return name;
+
+                    // Patrones de sufijos a remover
+                    const suffixPatterns = [
+                      /\s+(Sec|Section)\s+\d+[A-Z]*/gi, // "Sec 1", "Section 2A"
+                      /\s+(Phase|Ph)\s+\d+[A-Z]*/gi, // "Phase 1A", "Ph 2B"
+                      /\s+\d+(st|nd|rd|th)\s+(Sec|Section)/gi, // "6th Sec", "1st Section"
+                      /\s+(Unit|Tract)\s+\d+[A-Z]*/gi, // "Unit 1", "Tract 2A"
+                      /\s+(Plat|Block)\s+\d+[A-Z]*/gi, // "Plat 1", "Block 2A"
+                      /\s+(Addition|Add)\s+\d*/gi, // "Addition 1", "Add"
+                      /\s+(Subdivision|Sub)\s+\d*/gi, // "Subdivision 1", "Sub"
+                      /\s+(Parcel|Lot)\s+\d+[A-Z]*/gi, // "Parcel 1A", "Lot 2B"
+                    ];
+
+                    let cleanName = name.trim();
+
+                    // Aplicar todos los patrones de limpieza
+                    suffixPatterns.forEach((pattern) => {
+                      cleanName = cleanName.replace(pattern, "");
+                    });
+
+                    // Limpiar espacios múltiples y trim final
+                    cleanName = cleanName.replace(/\s+/g, " ").trim();
+
+                    return cleanName;
+                  };
+
+                  let neighborhood = neighborhoodMatch
+                    ? neighborhoodMatch[1]
+                    : null;
+                  let community = communityMatch ? communityMatch[1] : null;
+
+                  // Aplicar limpieza
+                  if (neighborhood) {
+                    neighborhood = cleanCommunityName(neighborhood);
+                  }
+
+                  if (community) {
+                    community = cleanCommunityName(community);
+                  }
+
                   const result = {
                     success: true,
-                    neighborhood: neighborhoodMatch
-                      ? neighborhoodMatch[1]
-                      : null,
-                    community: communityMatch ? communityMatch[1] : null,
+                    neighborhood: neighborhood,
+                    community: community,
                   };
                   addLog(`✅ Gemini success on attempt ${attempt}`, "success");
 
