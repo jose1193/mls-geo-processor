@@ -5,7 +5,7 @@ export default function Loading() {
         <div className="flex items-center space-x-4">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           <span className="text-lg font-semibold text-gray-700">
-            Cargando MLS Processor...
+            Loading MLS Processor...
           </span>
         </div>
       </div>
