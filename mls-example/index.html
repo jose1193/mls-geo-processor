@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sistema de Enriquecimiento Geográfico V4</title>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div class="version-badge">V4.0 - Auto-Detection + Hardcoded APIs</div>
+        <h1>🌍 Sistema de Enriquecimiento Geográfico</h1>
+        <p>
+          Procesamiento automatizado con detección de columnas y APIs
+          preconfiguradas
+        </p>
+      </div>
+
+      <div class="main-content">
+        <!-- Stats Section -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-number" id="totalProcessed">0</div>
+            <div class="stat-label">Direcciones Procesadas</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" id="successRate">0%</div>
+            <div class="stat-label">Tasa de Éxito</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" id="geoapifyCount">0</div>
+            <div class="stat-label">Llamadas Geoapify</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" id="geminiCount">0</div>
+            <div class="stat-label">Llamadas Gemini</div>
+          </div>
+        </div>
+
+        <!-- API Status Section -->
+        <div class="api-status-section">
+          <h3 style="margin-bottom: 20px; color: #2c3e50">
+            🔑 Estado de APIs (Preconfiguradas)
+          </h3>
+          <div class="api-status-grid">
+            <div class="api-status-item">
+              <h4>Geoapify API</h4>
+              <div class="api-status-badge">✅ Configurada</div>
+              <p style="margin-top: 10px; color: #666">
+                Geocodificación y datos geográficos
+              </p>
+            </div>
+            <div class="api-status-item">
+              <h4>Gemini API</h4>
+              <div class="api-status-badge">✅ Configurada</div>
+              <p style="margin-top: 10px; color: #666">
+                Neighborhoods y Communities
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Upload Section -->
+        <div class="upload-section">
+          <h3 style="margin-bottom: 20px; color: #2c3e50">
+            📤 Subir Archivo Excel/CSV
+          </h3>
+
+          <div
+            class="file-upload-area"
+            id="fileUploadArea"
+            onclick="document.getElementById('fileInput').click()"
+          >
+            <div class="file-upload-icon">📊</div>
+            <div class="file-upload-text">
+              Haz clic aquí o arrastra tu archivo
+            </div>
+            <div class="file-upload-subtext">
+              Soporta: .xlsx, .xls, .csv (hasta 50MB)
+            </div>
+          </div>
+
+          <input
+            type="file"
+            id="fileInput"
+            accept=".xlsx,.xls,.csv"
+            style="display: none"
+          />
+
+          <div id="fileInfo" class="file-info hidden">
+            <h4>📄 Archivo Cargado</h4>
+            <p id="fileName">Nombre: -</p>
+            <p id="fileSize">Tamaño: -</p>
+            <p id="fileRows">Filas detectadas: -</p>
+          </div>
+
+          <div id="columnDetection" class="column-detection hidden">
+            <h4>🔍 Detección Automática de Columnas</h4>
+            <div id="columnsList"></div>
+          </div>
+
+          <button
+            class="btn btn-success"
+            id="processFileBtn"
+            onclick="processFile()"
+            disabled
+          >
+            🚀 Procesar Archivo Automáticamente
+          </button>
+          <button class="btn" onclick="previewFile()">👁️ Vista Previa</button>
+        </div>
+
+        <!-- Progress Section -->
+        <div id="progressSection" class="progress-container hidden">
+          <h3 style="margin-bottom: 20px; color: #2c3e50">
+            ⏳ Progreso del Procesamiento
+          </h3>
+
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+
+          <div class="progress-text" id="progressText">
+            Preparando procesamiento...
+          </div>
+
+          <button
+            class="btn btn-danger"
+            onclick="stopProcessing()"
+            style="margin-top: 20px"
+          >
+            ⏹️ Detener Procesamiento
+          </button>
+        </div>
+
+        <!-- Logs Section -->
+        <div class="logs-section">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 20px;
+            "
+          >
+            <h3 style="color: #2c3e50">📋 Logs de Procesamiento</h3>
+            <button class="btn" onclick="clearLogs()">🗑️ Limpiar Logs</button>
+          </div>
+          <div class="logs-container" id="logs">
+            <div class="log-entry log-info">
+              Sistema V4 iniciado. APIs preconfiguradas. Esperando archivo...
+            </div>
+          </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results-section">
+          <div class="results-header">
+            <h3 style="color: #2c3e50">📊 Resultados del Procesamiento</h3>
+            <div>
+              <button class="btn btn-success" onclick="downloadResults()">
+                💾 Descargar Resultados
+              </button>
+              <button class="btn btn-danger" onclick="clearResults()">
+                🗑️ Limpiar Resultados
+              </button>
+            </div>
+          </div>
+          <div id="resultsContainer">
+            <p style="text-align: center; color: #6c757d; padding: 40px">
+              No hay resultados aún. Sube un archivo para comenzar.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="js/config-2.js"></script>
+  </body>
+</html>
