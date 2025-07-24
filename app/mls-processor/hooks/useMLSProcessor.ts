@@ -827,7 +827,6 @@ Ejemplo de respuesta correcta:
     const headers = [
       "ML#",
       "Address",
-      "Internet Display",
       "Zip Code",
       "City Name",
       "County",
@@ -850,8 +849,12 @@ Ejemplo de respuesta correcta:
       ...results.map((result) =>
         [
           `"${result["ML#"] || ""}"`,
-          `"${result["Address"] || ""}"`,
-          `"${result["Internet Display"] || ""}"`,
+          `"${
+            result.original_address ||
+            result["Address"] ||
+            result["Internet Display"] ||
+            ""
+          }"`,
           `"${result["Zip Code"] || ""}"`,
           `"${result["City Name"] || ""}"`,
           `"${result["County"] || ""}"`,
