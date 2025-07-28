@@ -107,6 +107,26 @@ export interface Stats {
   geminiCount: number;
 }
 
+// API Limits Configuration
+export interface APILimits {
+  mapbox: number;
+  geocodio: number;
+  gemini: number;
+}
+
+// API Usage Tracking
+export interface APIUsage {
+  mapboxUsed: number;
+  geocodioUsed: number;
+  geminiUsed: number;
+  mapboxRemaining: number;
+  geocodioRemaining: number;
+  geminiRemaining: number;
+  mapboxPercentage: number;
+  geocodioPercentage: number;
+  geminiPercentage: number;
+}
+
 export interface LogEntry {
   id: string;
   timestamp: string;
@@ -138,10 +158,20 @@ export interface FileData {
 const isDevelopment = process.env.NODE_ENV === "development";
 const DELAY_BETWEEN_REQUESTS = isDevelopment ? 500 : 1500; // Shorter delay in dev, longer in production
 const GEMINI_DELAY = isDevelopment ? 1000 : 3000; // Shorter delay in dev, longer in production
+
+// API Limits Configuration - Configurable limits for each service
+const API_LIMITS: APILimits = {
+  mapbox: 50000, // Mapbox free tier limit
+  geocodio: 50000, // Geocodio premium tier limit
+  gemini: 100000, // Gemini premium - 100k requests
+};
+
+// Storage keys
 const SAVE_INTERVAL = 5; // Auto-save every 5 processed records (more frequent)
 const STORAGE_KEY = "mls_processing_progress";
 const CACHE_KEY = "mls_address_cache";
 const GEMINI_CACHE_KEY = "mls_gemini_cache"; // Separate cache for Gemini results
+const API_USAGE_KEY = "mls_api_usage"; // New key for API usage tracking
 
 // Recovery interface
 interface ProcessingProgress {
@@ -166,6 +196,19 @@ export function useMLSProcessor() {
     mapboxCount: 0,
     geocodioCount: 0,
     geminiCount: 0,
+  });
+
+  // API Usage tracking state
+  const [apiUsage, setApiUsage] = useState<APIUsage>({
+    mapboxUsed: 0,
+    geocodioUsed: 0,
+    geminiUsed: 0,
+    mapboxRemaining: API_LIMITS.mapbox,
+    geocodioRemaining: API_LIMITS.geocodio,
+    geminiRemaining: API_LIMITS.gemini,
+    mapboxPercentage: 0,
+    geocodioPercentage: 0,
+    geminiPercentage: 0,
   });
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -209,6 +252,128 @@ export function useMLSProcessor() {
       return String(value).trim();
     },
     []
+  );
+
+  // API Usage Management Functions
+  const loadApiUsage = useCallback((): APIUsage => {
+    try {
+      const saved = localStorage.getItem(API_USAGE_KEY);
+      if (saved) {
+        const data = JSON.parse(saved);
+        // Check if data is from today (reset daily)
+        const today = new Date().toDateString();
+        const savedDate = new Date(data.timestamp || 0).toDateString();
+
+        if (today === savedDate) {
+          return {
+            mapboxUsed: data.mapboxUsed || 0,
+            geocodioUsed: data.geocodioUsed || 0,
+            geminiUsed: data.geminiUsed || 0,
+            mapboxRemaining: API_LIMITS.mapbox - (data.mapboxUsed || 0),
+            geocodioRemaining: API_LIMITS.geocodio - (data.geocodioUsed || 0),
+            geminiRemaining: API_LIMITS.gemini - (data.geminiUsed || 0),
+            mapboxPercentage: Math.round(
+              ((data.mapboxUsed || 0) / API_LIMITS.mapbox) * 100
+            ),
+            geocodioPercentage: Math.round(
+              ((data.geocodioUsed || 0) / API_LIMITS.geocodio) * 100
+            ),
+            geminiPercentage: Math.round(
+              ((data.geminiUsed || 0) / API_LIMITS.gemini) * 100
+            ),
+          };
+        }
+      }
+    } catch (error) {
+      console.warn("⚠️ Failed to load API usage:", error);
+    }
+
+    // Return default values if no saved data or different day
+    return {
+      mapboxUsed: 0,
+      geocodioUsed: 0,
+      geminiUsed: 0,
+      mapboxRemaining: API_LIMITS.mapbox,
+      geocodioRemaining: API_LIMITS.geocodio,
+      geminiRemaining: API_LIMITS.gemini,
+      mapboxPercentage: 0,
+      geocodioPercentage: 0,
+      geminiPercentage: 0,
+    };
+  }, []);
+
+  const saveApiUsage = useCallback((usage: APIUsage) => {
+    try {
+      const dataToSave = {
+        ...usage,
+        timestamp: Date.now(),
+      };
+      localStorage.setItem(API_USAGE_KEY, JSON.stringify(dataToSave));
+    } catch (error) {
+      console.warn("⚠️ Failed to save API usage:", error);
+    }
+  }, []);
+
+  const updateApiUsage = useCallback(
+    (service: "mapbox" | "geocodio" | "gemini", increment = 1) => {
+      setApiUsage((prev) => {
+        const newUsage = { ...prev };
+
+        switch (service) {
+          case "mapbox":
+            newUsage.mapboxUsed += increment;
+            newUsage.mapboxRemaining = Math.max(
+              0,
+              API_LIMITS.mapbox - newUsage.mapboxUsed
+            );
+            newUsage.mapboxPercentage = Math.round(
+              (newUsage.mapboxUsed / API_LIMITS.mapbox) * 100
+            );
+            break;
+          case "geocodio":
+            newUsage.geocodioUsed += increment;
+            newUsage.geocodioRemaining = Math.max(
+              0,
+              API_LIMITS.geocodio - newUsage.geocodioUsed
+            );
+            newUsage.geocodioPercentage = Math.round(
+              (newUsage.geocodioUsed / API_LIMITS.geocodio) * 100
+            );
+            break;
+          case "gemini":
+            newUsage.geminiUsed += increment;
+            newUsage.geminiRemaining = Math.max(
+              0,
+              API_LIMITS.gemini - newUsage.geminiUsed
+            );
+            newUsage.geminiPercentage = Math.round(
+              (newUsage.geminiUsed / API_LIMITS.gemini) * 100
+            );
+            break;
+        }
+
+        // Save to localStorage
+        saveApiUsage(newUsage);
+        return newUsage;
+      });
+    },
+    [saveApiUsage]
+  );
+
+  const checkApiLimit = useCallback(
+    (service: "mapbox" | "geocodio" | "gemini"): boolean => {
+      switch (service) {
+        case "mapbox":
+          return apiUsage.mapboxUsed < API_LIMITS.mapbox;
+        case "geocodio":
+          return apiUsage.geocodioUsed < API_LIMITS.geocodio;
+        case "gemini":
+          return apiUsage.geminiUsed < API_LIMITS.gemini;
+        default:
+          return false;
+      }
+    },
+    [apiUsage]
   );
 
   const addLog = useCallback(
@@ -411,6 +576,19 @@ export function useMLSProcessor() {
     };
   }, []); // Empty dependency array to run only once on mount
 
+  // Initialize API usage tracking
+  useEffect(() => {
+    const usage = loadApiUsage();
+    setApiUsage(usage);
+
+    addLog(
+      `📊 API Usage loaded - Mapbox: ${usage.mapboxUsed}/${API_LIMITS.mapbox} (${usage.mapboxPercentage}%), ` +
+        `Geocodio: ${usage.geocodioUsed}/${API_LIMITS.geocodio} (${usage.geocodioPercentage}%), ` +
+        `Gemini: ${usage.geminiUsed}/${API_LIMITS.gemini} (${usage.geminiPercentage}%)`,
+      "info"
+    );
+  }, [loadApiUsage, addLog]);
+
   // Separate useEffect for beforeunload listener to save progress when page closes
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -485,8 +663,32 @@ export function useMLSProcessor() {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(CACHE_KEY);
     localStorage.removeItem(GEMINI_CACHE_KEY);
-    console.log("🗑️ Progress cache cleared");
+    localStorage.removeItem(API_USAGE_KEY); // Clear API usage tracking too
+    console.log("🗑️ Progress cache and API usage cleared");
   }, []);
+
+  const resetApiUsage = useCallback(() => {
+    const resetUsage = {
+      mapboxUsed: 0,
+      geocodioUsed: 0,
+      geminiUsed: 0,
+      mapboxRemaining: API_LIMITS.mapbox,
+      geocodioRemaining: API_LIMITS.geocodio,
+      geminiRemaining: API_LIMITS.gemini,
+      mapboxPercentage: 0,
+      geocodioPercentage: 0,
+      geminiPercentage: 0,
+    };
+    setApiUsage(resetUsage);
+    saveApiUsage(resetUsage);
+    addLog("🔄 API usage limits reset", "info");
+  }, [saveApiUsage, addLog]);
+
+  const refreshApiUsage = useCallback(() => {
+    const currentUsage = loadApiUsage();
+    setApiUsage(currentUsage);
+    addLog("🔄 API usage refreshed from storage", "info");
+  }, [loadApiUsage, addLog]);
 
   // Enhanced caching system
   const cacheAddressResult = useCallback(
@@ -694,6 +896,18 @@ export function useMLSProcessor() {
         return { success: false, error: "Mapbox API key not configured" };
       }
 
+      // Check API limit before making request
+      if (!checkApiLimit("mapbox")) {
+        addLog(
+          `🚫 Mapbox API limit reached (${apiUsage.mapboxUsed}/${API_LIMITS.mapbox}). Skipping request for: ${address}`,
+          "warning"
+        );
+        return {
+          success: false as const,
+          error: `Mapbox API limit reached (${apiUsage.mapboxUsed}/${API_LIMITS.mapbox})`,
+        };
+      }
+
       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodedAddress}.json?access_token=${apiKey}&country=us&types=address&limit=1`;
 
       try {
@@ -702,6 +916,9 @@ export function useMLSProcessor() {
           ...prev,
           mapboxCount: prev.mapboxCount + 1,
         }));
+
+        // Update API usage tracking
+        updateApiUsage("mapbox");
 
         const response = await fetch(url);
         if (!response.ok) {
@@ -789,7 +1006,7 @@ export function useMLSProcessor() {
         return { success: false as const, error: (error as Error).message };
       }
     },
-    [addLog]
+    [addLog, checkApiLimit, updateApiUsage, apiUsage.mapboxUsed]
   );
 
   // Geocode with Geocodio as backup
@@ -805,12 +1022,27 @@ export function useMLSProcessor() {
       const apiKey = process.env.NEXT_PUBLIC_GEOCODIO_API_KEY;
       const url = `https://api.geocod.io/v1.7/geocode?q=${encodedAddress}&api_key=${apiKey}&fields=cd,census2020`;
 
+      // Check API limit before making request
+      if (!checkApiLimit("geocodio")) {
+        addLog(
+          `🚫 Geocodio API limit reached (${apiUsage.geocodioUsed}/${API_LIMITS.geocodio}). Skipping request for: ${address}`,
+          "warning"
+        );
+        return {
+          success: false as const,
+          error: `Geocodio API limit reached (${apiUsage.geocodioUsed}/${API_LIMITS.geocodio})`,
+        };
+      }
+
       try {
         addLog(`🌍 Geocoding with Geocodio: ${fullAddress}`, "info");
         setStats((prev) => ({
           ...prev,
           geocodioCount: prev.geocodioCount + 1,
         }));
+
+        // Update API usage tracking
+        updateApiUsage("geocodio");
 
         const response = await fetch(url);
         if (!response.ok) {
@@ -862,7 +1094,7 @@ export function useMLSProcessor() {
         return { success: false as const, error: (error as Error).message };
       }
     },
-    [addLog]
+    [addLog, checkApiLimit, updateApiUsage, apiUsage.geocodioUsed]
   );
 
   // Get neighborhood from Gemini with optimized prompt and retry logic
@@ -935,6 +1167,18 @@ Ejemplo cuando no hay datos:
 
       const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 
+      // Check API limit before making request
+      if (!checkApiLimit("gemini")) {
+        addLog(
+          `🚫 Gemini API limit reached (${apiUsage.geminiUsed}/${API_LIMITS.gemini}). Skipping request for: ${fullAddress}`,
+          "warning"
+        );
+        return {
+          success: false as const,
+          error: `Gemini API limit reached (${apiUsage.geminiUsed}/${API_LIMITS.gemini})`,
+        };
+      }
+
       // Retry configuration for free account - environment aware
       const maxRetries = 3;
       const baseDelay = isDevelopment ? 3000 : 6000; // 3s in dev, 6s in production
@@ -946,6 +1190,9 @@ Ejemplo cuando no hay datos:
             "info"
           );
           setStats((prev) => ({ ...prev, geminiCount: prev.geminiCount + 1 }));
+
+          // Update API usage tracking
+          updateApiUsage("gemini");
 
           const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
@@ -1259,7 +1506,14 @@ Ejemplo cuando no hay datos:
       cacheGeminiResult(address, city, county, unexpectedErrorResult);
       return unexpectedErrorResult;
     },
-    [addLog, getCachedGeminiResult, cacheGeminiResult]
+    [
+      addLog,
+      getCachedGeminiResult,
+      cacheGeminiResult,
+      checkApiLimit,
+      updateApiUsage,
+      apiUsage.geminiUsed,
+    ]
   );
 
   // Process individual address with simplified Mapbox + Gemini strategy
@@ -1917,6 +2171,7 @@ Ejemplo cuando no hay datos:
 
   return {
     stats,
+    apiUsage,
     logs,
     isProcessing,
     progress,
@@ -1929,6 +2184,10 @@ Ejemplo cuando no hay datos:
     clearResults,
     downloadResults,
     stopProcessing,
+    // API Usage Management
+    apiLimits: API_LIMITS,
+    resetApiUsage,
+    refreshApiUsage,
     // Recovery functions
     showRecoveryDialog,
     setShowRecoveryDialog,

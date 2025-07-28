@@ -29,6 +29,8 @@ export default function MLSProcessorPage() {
 
   const {
     stats,
+    apiUsage,
+    apiLimits,
     logs,
     isProcessing,
     progress,
@@ -41,6 +43,8 @@ export default function MLSProcessorPage() {
     clearResults,
     downloadResults,
     stopProcessing,
+    resetApiUsage,
+    refreshApiUsage,
     // Recovery functions
     showRecoveryDialog,
     setShowRecoveryDialog,
@@ -68,6 +72,15 @@ export default function MLSProcessorPage() {
         : null,
     });
   }, [showRecoveryDialog, recoveryData]);
+
+  // Function to handle success modal close with API usage refresh
+  const handleSuccessModalClose = () => {
+    setShowSuccessModal(false);
+    // Force refresh API usage from localStorage after closing modal
+    setTimeout(() => {
+      refreshApiUsage();
+    }, 100);
+  };
 
   // Additional debug effect to monitor localStorage changes
   useEffect(() => {
@@ -109,11 +122,7 @@ export default function MLSProcessorPage() {
         <StatsGrid stats={stats} />
 
         {/* API Status */}
-        <APIStatus
-          mapboxRequestsUsed={stats.mapboxCount}
-          geocodioRequestsUsed={stats.geocodioCount}
-          geminiRequestsUsed={stats.geminiCount}
-        />
+        <APIStatus apiUsage={apiUsage} apiLimits={apiLimits} />
 
         {/* Debug Panel - Remove in production */}
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
@@ -234,6 +243,22 @@ export default function MLSProcessorPage() {
               className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm cursor-pointer"
             >
               🗑️ Clear Cache
+            </button>
+
+            <button
+              onClick={() => {
+                if (
+                  confirm(
+                    "¿Estás seguro de que quieres resetear el uso de APIs? Esto restablecerá todos los contadores a cero."
+                  )
+                ) {
+                  resetApiUsage();
+                  alert("✅ Uso de APIs reseteado correctamente");
+                }
+              }}
+              className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded text-sm cursor-pointer"
+            >
+              🔄 Reset API Usage
             </button>
           </div>
 
@@ -489,7 +514,7 @@ export default function MLSProcessorPage() {
             <div className="bg-white rounded-xl p-8 max-w-md mx-4 shadow-2xl relative">
               {/* Close X button */}
               <button
-                onClick={() => setShowSuccessModal(false)}
+                onClick={handleSuccessModalClose}
                 className="absolute top-3 right-3 bg-gray-500 hover:bg-gray-600 text-white rounded-full w-8 h-8 flex items-center justify-center transition-colors cursor-pointer shadow-lg"
                 title="Close dialog"
               >
@@ -545,7 +570,7 @@ export default function MLSProcessorPage() {
 
               <div className="space-y-3">
                 <button
-                  onClick={() => setShowSuccessModal(false)}
+                  onClick={handleSuccessModalClose}
                   className="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer"
                 >
                   ✅ OK
