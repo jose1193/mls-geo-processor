@@ -1,16 +1,16 @@
 interface APIStatusProps {
   mapboxRequestsUsed?: number;
-  geoapifyRequestsUsed?: number;
+  geocodioRequestsUsed?: number;
   geminiRequestsUsed?: number;
 }
 
 export function APIStatus({
   mapboxRequestsUsed = 0,
-  geoapifyRequestsUsed = 0,
+  geocodioRequestsUsed = 0,
   geminiRequestsUsed = 0,
 }: APIStatusProps) {
   const mapboxRemaining = 50000 - mapboxRequestsUsed;
-  const geoapifyRemaining = 1000 - geoapifyRequestsUsed; // Assuming free tier limit
+  const geocodioRemaining = 2500 - geocodioRequestsUsed; // Geocodio free tier limit
 
   return (
     <div className="bg-blue-50 rounded-xl p-6 mb-8 border-l-4 border-blue-500">
@@ -39,23 +39,23 @@ export function APIStatus({
           </div>
         </div>
 
-        {/* Geoapify API */}
+        {/* Geocodio API */}
         <div className="bg-white rounded-lg p-4 border-2 border-green-500 text-center">
-          <h4 className="font-semibold text-green-600 mb-2">🌍 Geoapify API</h4>
+          <h4 className="font-semibold text-green-600 mb-2">🌍 Geocodio API</h4>
           <div className="bg-green-500 text-white px-3 py-1 rounded-full text-sm mb-2">
             ✅ Backup Geocoding
           </div>
           <div className="text-sm text-gray-600 mb-2">
             <div className="font-semibold text-green-600 text-lg">
-              {geoapifyRemaining.toLocaleString()}
+              {geocodioRemaining.toLocaleString()}
             </div>
             <div>requests remaining</div>
-            <div className="text-xs">of 1,000 free</div>
+            <div className="text-xs">of 2,500 free</div>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
               className="bg-green-500 h-2 rounded-full"
-              style={{ width: `${((1000 - geoapifyRemaining) / 1000) * 100}%` }}
+              style={{ width: `${((2500 - geocodioRemaining) / 2500) * 100}%` }}
             ></div>
           </div>
         </div>
@@ -84,10 +84,10 @@ export function APIStatus({
         </h4>
         <div className="text-sm text-gray-600">
           <span className="font-medium">1. Mapbox</span> → Primary geocoding &
-          neighborhoods •
-          <span className="font-medium"> 2. Property Appraiser</span> → Official
-          subdivisions •<span className="font-medium"> 3. Gemini AI</span> →
-          Complete missing data
+          neighborhoods •<span className="font-medium"> 2. Geocodio</span> →
+          Backup geocoding with census data •
+          <span className="font-medium"> 3. Gemini AI</span> → Enhanced
+          neighborhood & community data
         </div>
       </div>
     </div>

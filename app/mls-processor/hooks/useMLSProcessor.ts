@@ -24,11 +24,86 @@ export interface ProcessedResult extends MLSData {
   error?: string;
 }
 
+// Gemini API response types
+export interface GeminiSuccessResult {
+  success: true;
+  neighborhood: string | null;
+  community: string | null;
+}
+
+export interface GeminiErrorResult {
+  success: false;
+  error: string;
+}
+
+export type GeminiResult = GeminiSuccessResult | GeminiErrorResult;
+
+// Mapbox API response types
+export interface MapboxSuccessResult {
+  success: true;
+  formatted: string;
+  latitude: number;
+  longitude: number;
+  neighborhood: string | null;
+  locality?: string | null;
+  place?: string | null;
+  district?: string | null;
+  region?: string | null;
+  postcode?: string | null;
+  country?: string | null;
+  confidence?: number | null;
+  accuracy?: string | null;
+  mapbox_id?: string;
+  full_context?: Array<{ id: string; text: string }>;
+  "House Number": string | null;
+  street_name?: string | null;
+}
+
+export interface MapboxErrorResult {
+  success: false;
+  error: string;
+}
+
+export type MapboxResult = MapboxSuccessResult | MapboxErrorResult;
+
+// Geocodio API response types
+export interface GeocodioSuccessResult {
+  success: true;
+  formatted: string;
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  accuracy_type?: string;
+  source?: string;
+  number?: string | null;
+  predirectional?: string | null;
+  street?: string | null;
+  suffix?: string | null;
+  postdirectional?: string | null;
+  city?: string | null;
+  county?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  congressional_district?: number | null;
+  state_legislative_district?: number | null;
+  census_tract?: string | null;
+  census_block?: string | null;
+  "House Number": string | null;
+  neighbourhood?: string | null;
+}
+
+export interface GeocodioErrorResult {
+  success: false;
+  error: string;
+}
+
+export type GeocodioResult = GeocodioSuccessResult | GeocodioErrorResult;
+
 export interface Stats {
   totalProcessed: number;
   successRate: string;
   mapboxCount: number;
-  geoapifyCount: number;
+  geocodioCount: number;
   geminiCount: number;
 }
 
@@ -59,9 +134,10 @@ export interface FileData {
   fileName: string;
 }
 
-// Constants
-const DELAY_BETWEEN_REQUESTS = 1100;
-const GEMINI_DELAY = 2000;
+// Constants - Dynamic delays based on environment
+const isDevelopment = process.env.NODE_ENV === "development";
+const DELAY_BETWEEN_REQUESTS = isDevelopment ? 500 : 1500; // Shorter delay in dev, longer in production
+const GEMINI_DELAY = isDevelopment ? 1000 : 3000; // Shorter delay in dev, longer in production
 const SAVE_INTERVAL = 5; // Auto-save every 5 processed records (more frequent)
 const STORAGE_KEY = "mls_processing_progress";
 const CACHE_KEY = "mls_address_cache";
@@ -88,7 +164,7 @@ export function useMLSProcessor() {
     totalProcessed: 0,
     successRate: "0%",
     mapboxCount: 0,
-    geoapifyCount: 0,
+    geocodioCount: 0,
     geminiCount: 0,
   });
 
@@ -113,6 +189,27 @@ export function useMLSProcessor() {
   );
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  // Helper function to normalize neighborhood/community values
+  const normalizeValue = useCallback(
+    (value: string | null | undefined): string => {
+      if (
+        value === null ||
+        value === undefined ||
+        value === "" ||
+        value === "null" ||
+        value === "undefined" ||
+        value === "No disponible" ||
+        value === "no disponible" ||
+        value === "not available" ||
+        value === "unknown"
+      ) {
+        return "N/A";
+      }
+      return String(value).trim();
+    },
+    []
+  );
 
   const addLog = useCallback(
     (message: string, type: LogEntry["type"] = "info") => {
@@ -168,12 +265,22 @@ export function useMLSProcessor() {
 
   // Initialize log only on client side to avoid hydration mismatch
   useEffect(() => {
-    // Initialize logs
+    // Initialize logs with environment info
+    const environmentInfo = `Environment: ${
+      process.env.NODE_ENV || "development"
+    } | Delays: Requests=${DELAY_BETWEEN_REQUESTS}ms, Gemini=${GEMINI_DELAY}ms`;
+
     setLogs([
       {
         id: "1",
         timestamp: new Date().toLocaleTimeString(),
         message: "System V4 started. APIs preconfigured. Waiting for file...",
+        type: "info",
+      },
+      {
+        id: "2",
+        timestamp: new Date().toLocaleTimeString(),
+        message: environmentInfo,
         type: "info",
       },
     ]);
@@ -321,7 +428,7 @@ export function useMLSProcessor() {
                 100
             )}%`,
             mapboxCount: stats.mapboxCount,
-            geoapifyCount: stats.geoapifyCount,
+            geocodioCount: stats.geocodioCount,
             geminiCount: stats.geminiCount,
           };
 
@@ -415,7 +522,8 @@ export function useMLSProcessor() {
       }
     ) => {
       try {
-        const cacheKey = `gemini_${btoa(
+        const env = process.env.NODE_ENV || "development";
+        const cacheKey = `gemini_${env}_${btoa(
           `${address}_${city}_${county}`.toLowerCase().trim()
         )}`;
         localStorage.setItem(
@@ -423,9 +531,10 @@ export function useMLSProcessor() {
           JSON.stringify({
             result,
             timestamp: Date.now(),
+            environment: env,
           })
         );
-        console.log(`💾 Gemini result cached for: ${address}`);
+        console.log(`💾 Gemini result cached for: ${address} (${env})`);
       } catch (error) {
         console.warn("⚠️ Gemini cache storage failed:", error);
       }
@@ -445,7 +554,8 @@ export function useMLSProcessor() {
       error?: string;
     } | null => {
       try {
-        const cacheKey = `gemini_${btoa(
+        const env = process.env.NODE_ENV || "development";
+        const cacheKey = `gemini_${env}_${btoa(
           `${address}_${city}_${county}`.toLowerCase().trim()
         )}`;
         const cached = localStorage.getItem(cacheKey);
@@ -454,7 +564,9 @@ export function useMLSProcessor() {
           // Cache valid for 7 days (Gemini results are more stable)
           const daysOld = (Date.now() - data.timestamp) / (1000 * 60 * 60 * 24);
           if (daysOld <= 7) {
-            console.log(`📄 Using cached Gemini result for: ${address}`);
+            console.log(
+              `📄 Using cached Gemini result for: ${address} (${env})`
+            );
             return data.result;
           } else {
             localStorage.removeItem(cacheKey);
@@ -568,7 +680,12 @@ export function useMLSProcessor() {
 
   // Geocode with Mapbox as primary source
   const geocodeWithMapbox = useCallback(
-    async (address: string, zip: string, city: string, county: string) => {
+    async (
+      address: string,
+      zip: string,
+      city: string,
+      county: string
+    ): Promise<MapboxResult> => {
       const fullAddress = `${address}, ${zip}, ${city}, ${county}`;
       const encodedAddress = encodeURIComponent(fullAddress);
       const apiKey = process.env.NEXT_PUBLIC_MAPBOX_API_KEY;
@@ -647,7 +764,7 @@ export function useMLSProcessor() {
           }
 
           return {
-            success: true,
+            success: true as const,
             formatted: feature.place_name,
             latitude: coords[1],
             longitude: coords[0],
@@ -666,28 +783,33 @@ export function useMLSProcessor() {
             street_name: street_name,
           };
         } else {
-          return { success: false, error: "No results found" };
+          return { success: false as const, error: "No results found" };
         }
       } catch (error) {
-        return { success: false, error: (error as Error).message };
+        return { success: false as const, error: (error as Error).message };
       }
     },
     [addLog]
   );
 
-  // Geocode with Geoapify as backup
-  const geocodeWithGeoapify = useCallback(
-    async (address: string, zip: string, city: string, county: string) => {
+  // Geocode with Geocodio as backup
+  const geocodeWithGeocodio = useCallback(
+    async (
+      address: string,
+      zip: string,
+      city: string,
+      county: string
+    ): Promise<GeocodioResult> => {
       const fullAddress = `${address}, ${zip}, ${city}, ${county}`;
       const encodedAddress = encodeURIComponent(fullAddress);
-      const apiKey = process.env.NEXT_PUBLIC_GEOAPIFY_API_KEY;
-      const url = `https://api.geoapify.com/v1/geocode/search?text=${encodedAddress}&apiKey=${apiKey}`;
+      const apiKey = process.env.NEXT_PUBLIC_GEOCODIO_API_KEY;
+      const url = `https://api.geocod.io/v1.7/geocode?q=${encodedAddress}&api_key=${apiKey}&fields=cd,census2020`;
 
       try {
-        addLog(`Geocoding with Geoapify: ${fullAddress}`, "info");
+        addLog(`🌍 Geocoding with Geocodio: ${fullAddress}`, "info");
         setStats((prev) => ({
           ...prev,
-          geoapifyCount: prev.geoapifyCount + 1,
+          geocodioCount: prev.geocodioCount + 1,
         }));
 
         const response = await fetch(url);
@@ -697,28 +819,47 @@ export function useMLSProcessor() {
 
         const data = await response.json();
 
-        if (data.features && data.features.length > 0) {
-          const feature = data.features[0];
-          const props = feature.properties;
-          const coords = feature.geometry.coordinates;
+        if (data.results && data.results.length > 0) {
+          const result = data.results[0];
+          const location = result.location;
+          const addressComponents = result.address_components;
+          const fields = result.fields || {};
 
           return {
-            success: true,
-            formatted: props.formatted || fullAddress,
-            latitude: coords[1],
-            longitude: coords[0],
-            neighbourhood: props.neighbourhood || null,
-            suburb: props.suburb || null,
-            district: props.district || null,
-            confidence: props.confidence || null,
-            result_type: props.result_type || null,
-            "House Number": props.housenumber || null,
+            success: true as const,
+            formatted: result.formatted_address || fullAddress,
+            latitude: location.lat,
+            longitude: location.lng,
+            accuracy: result.accuracy,
+            accuracy_type: result.accuracy_type,
+            source: result.source,
+            // Address components
+            number: addressComponents.number || null,
+            predirectional: addressComponents.predirectional || null,
+            street: addressComponents.street || null,
+            suffix: addressComponents.suffix || null,
+            postdirectional: addressComponents.postdirectional || null,
+            city: addressComponents.city || null,
+            county: addressComponents.county || null,
+            state: addressComponents.state || null,
+            zip: addressComponents.zip || null,
+            // Census data if available
+            congressional_district:
+              fields.congressional_districts?.[0]?.district_number || null,
+            state_legislative_district:
+              fields.state_legislative_districts?.house?.district_number ||
+              null,
+            census_tract: fields.census?.census_tract_code || null,
+            census_block: fields.census?.block_code || null,
+            // For compatibility with existing code
+            "House Number": addressComponents.number || null,
+            neighbourhood: null, // Geocodio doesn't provide neighborhood data directly
           };
         } else {
-          return { success: false, error: "No results found" };
+          return { success: false as const, error: "No results found" };
         }
       } catch (error) {
-        return { success: false, error: (error as Error).message };
+        return { success: false as const, error: (error as Error).message };
       }
     },
     [addLog]
@@ -726,14 +867,30 @@ export function useMLSProcessor() {
 
   // Get neighborhood from Gemini with optimized prompt and retry logic
   const getNeighborhoodFromGemini = useCallback(
-    async (address: string, city: string, county: string) => {
+    async (
+      address: string,
+      city: string,
+      county: string
+    ): Promise<GeminiResult> => {
       const fullAddress = `${address}, ${city}, ${county}, FL`;
 
       // Check cache first
       const cachedResult = getCachedGeminiResult(address, city, county);
       if (cachedResult) {
         addLog(`📄 Using cached Gemini result for: ${address}`, "info");
-        return cachedResult;
+        // Convert cache result to proper type
+        if (cachedResult.success) {
+          return {
+            success: true as const,
+            neighborhood: cachedResult.neighborhood || null,
+            community: cachedResult.community || null,
+          };
+        } else {
+          return {
+            success: false as const,
+            error: cachedResult.error || "Unknown cached error",
+          };
+        }
       }
 
       // PROMPT OPTIMIZADO BASADO EN GOOGLE AI STUDIO (exact copy from config.js)
@@ -756,25 +913,31 @@ INSTRUCCIONES ESPECÍFICAS:
   * CORRECTO: "Cresthaven" (NO "Cresthaven 6th Sec")
 - Usa nombres comerciales limpios y principales tal como aparecen en marketing inmobiliario
 - Si una dirección tiene múltiples opciones, selecciona la más conocida comercialmente
-- Si no tienes datos específicos para algún campo, usa "No disponible"
+- Si no tienes datos específicos para algún campo, usa exactamente "N/A" (no "No disponible", no "null", no "undefined")
 
 FORMATO DE RESPUESTA (JSON únicamente):
 {
-  "neighborhood": "nombre principal del vecindario general",
-  "community": "nombre principal de la subdivisión/comunidad específica"
+  "neighborhood": "nombre principal del vecindario general o N/A",
+  "community": "nombre principal de la subdivisión/comunidad específica o N/A"
 }
 
 Ejemplo de respuesta correcta:
 {
   "neighborhood": "Kendall Green",
   "community": "Kendall Lake"
+}
+
+Ejemplo cuando no hay datos:
+{
+  "neighborhood": "N/A",
+  "community": "N/A"
 }`;
 
       const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 
-      // Retry configuration for free account
+      // Retry configuration for free account - environment aware
       const maxRetries = 3;
-      const baseDelay = 5000; // 5 seconds base delay
+      const baseDelay = isDevelopment ? 3000 : 6000; // 3s in dev, 6s in production
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
@@ -826,7 +989,7 @@ Ejemplo de respuesta correcta:
               } else {
                 // Max retries reached, cache the failure and skip Gemini
                 const failureResult = {
-                  success: false,
+                  success: false as const,
                   error: `API overloaded after ${maxRetries} attempts`,
                 };
                 cacheGeminiResult(address, city, county, failureResult);
@@ -839,7 +1002,7 @@ Ejemplo de respuesta correcta:
             } else if (response.status === 400) {
               // Bad request - don't retry, cache the failure
               const errorResult = {
-                success: false,
+                success: false as const,
                 error: `Bad request: ${errorText}`,
               };
               cacheGeminiResult(address, city, county, errorResult);
@@ -889,24 +1052,35 @@ Ejemplo de respuesta correcta:
                   "no específico",
                   "no encontrado",
                   "not available",
+                  "null",
+                  "undefined",
+                  "",
                 ];
 
                 if (
                   neighborhood &&
+                  typeof neighborhood === "string" &&
                   invalidValues.some((invalid) =>
-                    neighborhood.toLowerCase().includes(invalid.toLowerCase())
+                    neighborhood
+                      .toLowerCase()
+                      .trim()
+                      .includes(invalid.toLowerCase())
                   )
                 ) {
-                  neighborhood = null;
+                  neighborhood = "N/A";
                 }
 
                 if (
                   community &&
+                  typeof community === "string" &&
                   invalidValues.some((invalid) =>
-                    community.toLowerCase().includes(invalid.toLowerCase())
+                    community
+                      .toLowerCase()
+                      .trim()
+                      .includes(invalid.toLowerCase())
                   )
                 ) {
-                  community = null;
+                  community = "N/A";
                 }
 
                 // Limpiar sufijos innecesarios de comunidades/vecindarios
@@ -947,10 +1121,13 @@ Ejemplo de respuesta correcta:
                   community = cleanCommunityName(community);
                 }
 
-                // Validar que tenemos al menos uno de los campos
-                if (!neighborhood && !community) {
+                // Validar que tenemos al menos uno de los campos con datos válidos
+                if (
+                  (!neighborhood || neighborhood === "N/A") &&
+                  (!community || community === "N/A")
+                ) {
                   const noDataResult = {
-                    success: false,
+                    success: false as const,
                     error:
                       "No se encontraron datos específicos de vecindario o comunidad",
                   };
@@ -959,9 +1136,9 @@ Ejemplo de respuesta correcta:
                 }
 
                 const result = {
-                  success: true,
-                  neighborhood: neighborhood,
-                  community: community,
+                  success: true as const,
+                  neighborhood: neighborhood || "N/A",
+                  community: community || "N/A",
                 };
 
                 console.log("✅ Gemini Parsed Result:", result);
@@ -1024,7 +1201,7 @@ Ejemplo de respuesta correcta:
                   }
 
                   const result = {
-                    success: true,
+                    success: true as const,
                     neighborhood: neighborhood,
                     community: community,
                   };
@@ -1042,7 +1219,7 @@ Ejemplo de respuesta correcta:
               console.error("❌ Raw text was:", text);
 
               const parseErrorResult = {
-                success: false,
+                success: false as const,
                 error: `Error de parsing: ${(parseError as Error).message}`,
               };
               cacheGeminiResult(address, city, county, parseErrorResult);
@@ -1051,7 +1228,7 @@ Ejemplo de respuesta correcta:
           } else {
             console.error("❌ Gemini response structure invalid:", data);
             const invalidStructureResult = {
-              success: false,
+              success: false as const,
               error: "Estructura de respuesta de Gemini inválida",
             };
             cacheGeminiResult(address, city, county, invalidStructureResult);
@@ -1061,21 +1238,22 @@ Ejemplo de respuesta correcta:
           console.error(`❌ Gemini Error (attempt ${attempt}):`, error);
           if (attempt === maxRetries) {
             const finalErrorResult = {
-              success: false,
+              success: false as const,
               error: (error as Error).message,
             };
             cacheGeminiResult(address, city, county, finalErrorResult);
             addLog(`❌ Gemini failed after ${maxRetries} attempts`, "error");
             return finalErrorResult;
           }
-          // Wait before retrying
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+          // Wait before retrying - environment aware delay
+          const retryDelay = isDevelopment ? 1500 : 3000;
+          await new Promise((resolve) => setTimeout(resolve, retryDelay));
         }
       }
 
       // This should never be reached, but just in case
       const unexpectedErrorResult = {
-        success: false,
+        success: false as const,
         error: "Unexpected error in retry loop",
       };
       cacheGeminiResult(address, city, county, unexpectedErrorResult);
@@ -1123,64 +1301,108 @@ Ejemplo de respuesta correcta:
             longitude: mapboxResult.longitude,
             neighbourhood: mapboxResult.neighborhood || undefined,
             "House Number": mapboxResult["House Number"],
-            api_source: "Mapbox + Gemini",
           };
 
           addLog(`✅ Mapbox success for: ${address}`, "success");
 
-          // Step 2: Try Gemini for neighborhood/community data (optional enhancement)
-          addLog(
-            `🔄 Step 2: Using Gemini for neighborhood/community data`,
-            "info"
-          );
-          const geminiResult = await getNeighborhoodFromGemini(
-            address,
-            city,
-            county
-          );
+          // Check if Mapbox provided neighborhood data
+          const hasMapboxNeighborhood =
+            mapboxResult.neighborhood &&
+            normalizeValue(mapboxResult.neighborhood) !== "N/A";
 
-          if (geminiResult.success && "neighborhood" in geminiResult) {
-            // Prioritize Mapbox neighborhoods if available, supplement with Gemini
-            result.neighborhoods =
-              mapboxResult.neighborhood || geminiResult.neighborhood;
-            result.comunidades = geminiResult.community;
-
-            // Set sources appropriately
-            if (mapboxResult.neighborhood) {
-              result.neighborhood_source = "Mapbox";
-            } else {
-              result.neighborhood_source = "Gemini AI";
-            }
-            result.community_source = "Gemini AI";
-
-            addLog(
-              `✅ Combined result: N=${result.neighborhoods} (${result.neighborhood_source}), C=${geminiResult.community} (Gemini)`,
-              "success"
-            );
-          } else {
-            // Use only Mapbox data if Gemini fails (still successful processing)
-            result.neighborhoods = mapboxResult.neighborhood || undefined;
+          if (hasMapboxNeighborhood) {
+            // Mapbox has neighborhood, use it directly
+            result.neighborhoods = normalizeValue(mapboxResult.neighborhood);
             result.neighborhood_source = "Mapbox";
             result.api_source = "Mapbox Only";
 
-            const errorMsg =
-              "error" in geminiResult
-                ? geminiResult.error
-                : "No valid data returned";
+            // Still try Gemini for community data (communities are usually not in Mapbox)
             addLog(
-              `⚠️ Gemini unavailable, using Mapbox only: ${errorMsg}`,
-              "warning"
+              `🔄 Mapbox has neighborhood, using Gemini only for community data`,
+              "info"
             );
+
+            const geminiResult = await getNeighborhoodFromGemini(
+              address,
+              city,
+              county
+            );
+
+            if (geminiResult.success && "community" in geminiResult) {
+              result.comunidades = normalizeValue(geminiResult.community);
+              result.community_source =
+                normalizeValue(geminiResult.community) !== "N/A"
+                  ? "Gemini AI"
+                  : "N/A";
+              result.api_source = "Mapbox + Gemini";
+            } else {
+              result.comunidades = "N/A";
+              result.community_source = "N/A";
+            }
+
+            addLog(
+              `✅ Mapbox complete: N=${result.neighborhoods} (${result.neighborhood_source}), C=${result.comunidades} (${result.community_source})`,
+              "success"
+            );
+          } else {
+            // Mapbox didn't provide neighborhood, use Gemini to complete both
+            addLog(
+              `🔄 Mapbox missing neighborhood, using Gemini to complete data`,
+              "info"
+            );
+
+            const geminiResult = await getNeighborhoodFromGemini(
+              address,
+              city,
+              county
+            );
+
+            if (geminiResult.success && "neighborhood" in geminiResult) {
+              result.neighborhoods = normalizeValue(geminiResult.neighborhood);
+              result.comunidades = normalizeValue(geminiResult.community);
+
+              result.neighborhood_source =
+                normalizeValue(geminiResult.neighborhood) !== "N/A"
+                  ? "Gemini AI"
+                  : "N/A";
+              result.community_source =
+                normalizeValue(geminiResult.community) !== "N/A"
+                  ? "Gemini AI"
+                  : "N/A";
+              result.api_source = "Mapbox + Gemini";
+
+              addLog(
+                `✅ Mapbox + Gemini complete: N=${result.neighborhoods} (${result.neighborhood_source}), C=${result.comunidades} (${result.community_source})`,
+                "success"
+              );
+            } else {
+              // Gemini also failed, use only Mapbox geocoding data
+              result.neighborhoods = "N/A";
+              result.comunidades = "N/A";
+              result.neighborhood_source = "N/A";
+              result.community_source = "N/A";
+              result.api_source = "Mapbox Only";
+
+              const errorMsg =
+                "error" in geminiResult
+                  ? geminiResult.error
+                  : "No valid data returned";
+              addLog(
+                `⚠️ Gemini failed, using only Mapbox geocoding: ${errorMsg}`,
+                "warning"
+              );
+            }
           }
 
-          // Add delay between requests (reduced for better UX)
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          // Add delay between requests - environment aware
+          const mapboxDelay = isDevelopment ? 500 : 1500;
+          await new Promise((resolve) => setTimeout(resolve, mapboxDelay));
         } else {
-          // If Mapbox fails, try Geoapify as backup, then Gemini
-          addLog(`⚠️ Mapbox failed: ${mapboxResult.error}`, "warning");
-          addLog(`🔄 Fallback: Trying Geoapify`, "info");
+          // Mapbox failed, use Geocodio as fallback
+          addLog(`❌ Mapbox failed: ${mapboxResult.error}`, "error");
+          addLog(`🔄 Fallback: Trying Geocodio`, "info");
 
-          const geocodeResult = await geocodeWithGeoapify(
+          const geocodeResult = await geocodeWithGeocodio(
             address,
             zip,
             city,
@@ -1193,39 +1415,31 @@ Ejemplo de respuesta correcta:
               formatted_address: geocodeResult.formatted,
               latitude: geocodeResult.latitude,
               longitude: geocodeResult.longitude,
-              neighbourhood: geocodeResult.neighbourhood,
+              neighbourhood: geocodeResult.neighbourhood || undefined,
               "House Number": geocodeResult["House Number"],
-              api_source: "Geoapify + Gemini",
+              neighborhoods: normalizeValue(geocodeResult.neighbourhood),
+              neighborhood_source: geocodeResult.neighbourhood
+                ? "Geocodio"
+                : "N/A",
+              comunidades: "N/A", // Geocodio doesn't provide community data
+              community_source: "N/A",
+              api_source: "Geocodio (Fallback)",
             };
 
-            // Use Gemini for neighborhood/community data
-            const geminiResult = await getNeighborhoodFromGemini(
-              address,
-              city,
-              county
-            );
-
-            if (geminiResult.success && "neighborhood" in geminiResult) {
-              result.neighborhoods = geminiResult.neighborhood;
-              result.comunidades = geminiResult.community;
-              result.neighborhood_source = "Gemini AI";
-              result.community_source = "Gemini AI";
-
-              addLog(
-                `✅ Geoapify + Gemini result: N=${geminiResult.neighborhood}, C=${geminiResult.community}`,
-                "success"
-              );
-            } else {
-              result.neighborhoods = geocodeResult.neighbourhood;
-              result.neighborhood_source = "Geoapify";
-              result.api_source = "Geoapify Only";
-            }
+            addLog(`✅ Geocodio fallback success for: ${address}`, "success");
 
             await new Promise((resolve) => setTimeout(resolve, GEMINI_DELAY));
           } else {
+            // All geocoding services failed
             result.status = "error";
-            result.error = `All APIs failed - Mapbox: ${mapboxResult.error}, Geoapify: ${geocodeResult.error}`;
+            result.error = `All APIs failed - Mapbox: ${mapboxResult.error}, Geocodio: ${geocodeResult.error}`;
             result.api_source = "Failed";
+            result.neighborhoods = "N/A";
+            result.comunidades = "N/A";
+            result.neighborhood_source = "N/A";
+            result.community_source = "N/A";
+
+            addLog(`❌ All geocoding failed for: ${address}`, "error");
           }
         }
 
@@ -1238,10 +1452,20 @@ Ejemplo de respuesta correcta:
           error: (error as Error).message,
           processed_at: new Date().toISOString(),
           api_source: "Error",
+          neighborhoods: "N/A",
+          comunidades: "N/A",
+          neighborhood_source: "N/A",
+          community_source: "N/A",
         };
       }
     },
-    [geocodeWithMapbox, geocodeWithGeoapify, getNeighborhoodFromGemini, addLog]
+    [
+      geocodeWithMapbox,
+      geocodeWithGeocodio,
+      getNeighborhoodFromGemini,
+      addLog,
+      normalizeValue,
+    ]
   );
 
   const processFile = useCallback(
@@ -1486,7 +1710,7 @@ Ejemplo de respuesta correcta:
       "Estado",
       "Fuente API",
       "Mapbox Requests",
-      "Geoapify Requests",
+      "Geocodio Requests",
       "Gemini Requests",
     ];
 
@@ -1515,14 +1739,14 @@ Ejemplo de respuesta correcta:
           `"${result["House Number"] || ""}"`,
           result.latitude || "",
           result.longitude || "",
-          `"${result.neighborhoods || ""}"`,
-          `"${result.neighborhood_source || ""}"`,
-          `"${result.comunidades || ""}"`,
-          `"${result.community_source || ""}"`,
+          `"${result.neighborhoods || "N/A"}"`,
+          `"${result.neighborhood_source || "N/A"}"`,
+          `"${result.comunidades || "N/A"}"`,
+          `"${result.community_source || "N/A"}"`,
           result.status || "",
           `"${result.api_source || ""}"`,
           stats.mapboxCount,
-          stats.geoapifyCount,
+          stats.geocodioCount,
           stats.geminiCount,
         ].join(",")
       ),
@@ -1545,7 +1769,7 @@ Ejemplo de respuesta correcta:
       totalProcessed: 0,
       successRate: "0%",
       mapboxCount: 0,
-      geoapifyCount: 0,
+      geocodioCount: 0,
       geminiCount: 0,
     });
     setDetectedColumns({
@@ -1621,10 +1845,10 @@ Ejemplo de respuesta correcta:
           `"${result["House Number"] || ""}"`,
           result.latitude || "",
           result.longitude || "",
-          `"${result.neighborhoods || ""}"`,
-          `"${result.neighborhood_source || ""}"`,
-          `"${result.comunidades || ""}"`,
-          `"${result.community_source || ""}"`,
+          `"${result.neighborhoods || "N/A"}"`,
+          `"${result.neighborhood_source || "N/A"}"`,
+          `"${result.comunidades || "N/A"}"`,
+          `"${result.community_source || "N/A"}"`,
           result.status || "",
           `"${result.api_source || ""}"`,
         ].join(",")

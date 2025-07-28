@@ -109,7 +109,11 @@ export default function MLSProcessorPage() {
         <StatsGrid stats={stats} />
 
         {/* API Status */}
-        <APIStatus />
+        <APIStatus
+          mapboxRequestsUsed={stats.mapboxCount}
+          geocodioRequestsUsed={stats.geocodioCount}
+          geminiRequestsUsed={stats.geminiCount}
+        />
 
         {/* Debug Panel - Remove in production */}
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
