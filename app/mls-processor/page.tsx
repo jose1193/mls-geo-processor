@@ -249,7 +249,7 @@ export default function MLSProcessorPage() {
               onClick={() => {
                 if (
                   confirm(
-                    "¿Estás seguro de que quieres resetear el uso de APIs? Esto restablecerá todos los contadores a cero."
+                    "Are you sure you want to reset API usage? This will reset all counters to zero."
                   )
                 ) {
                   resetApiUsage();
