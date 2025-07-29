@@ -253,7 +253,7 @@ export default function MLSProcessorPage() {
                   )
                 ) {
                   resetApiUsage();
-                  alert("✅ Uso de APIs reseteado correctamente");
+                  alert("✅ API usage reset correctly");
                 }
               }}
               className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded text-sm cursor-pointer"
