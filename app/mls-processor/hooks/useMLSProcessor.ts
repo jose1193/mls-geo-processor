@@ -154,10 +154,23 @@ export interface FileData {
   fileName: string;
 }
 
-// Constants - Dynamic delays based on environment
+// Constants - Optimized delays for consistent behavior across environments
 const isDevelopment = process.env.NODE_ENV === "development";
-const DELAY_BETWEEN_REQUESTS = isDevelopment ? 500 : 2500; // Shorter delay in dev, longer in production
-const GEMINI_DELAY = isDevelopment ? 1000 : 5000; // Shorter delay in dev, longer in production
+const isVercel = process.env.VERCEL === "1"; // Vercel-specific detection
+const isProduction = process.env.NODE_ENV === "production";
+
+// Debug environment detection
+console.log("🔍 Environment Detection:", {
+  NODE_ENV: process.env.NODE_ENV,
+  VERCEL: process.env.VERCEL,
+  isDevelopment,
+  isVercel,
+  isProduction
+});
+
+// More conservative delays that work well in all environments
+const DELAY_BETWEEN_REQUESTS = isDevelopment ? 800 : (isVercel ? 1500 : 2000); // 800ms dev, 1.5s Vercel, 2s other prod
+const GEMINI_DELAY = isDevelopment ? 1200 : (isVercel ? 2000 : 3000); // 1.2s dev, 2s Vercel, 3s other prod
 
 // API Limits Configuration - Configurable limits for each service
 const API_LIMITS: APILimits = {
@@ -473,10 +486,10 @@ export function useMLSProcessor() {
 
   // Initialize log only on client side to avoid hydration mismatch
   useEffect(() => {
-    // Initialize logs with environment info
+    // Initialize logs with detailed environment info
     const environmentInfo = `Environment: ${
       process.env.NODE_ENV || "development"
-    } | Delays: Requests=${DELAY_BETWEEN_REQUESTS}ms, Gemini=${GEMINI_DELAY}ms`;
+    } | Vercel: ${isVercel ? "Yes" : "No"} | Delays: Requests=${DELAY_BETWEEN_REQUESTS}ms, Gemini=${GEMINI_DELAY}ms`;
 
     setLogs([
       {
@@ -1222,9 +1235,9 @@ Ejemplo cuando no hay datos:
         };
       }
 
-      // Retry configuration for free account - environment aware
+      // Retry configuration - optimized for consistent behavior
       const maxRetries = 3;
-      const baseDelay = isDevelopment ? 3000 : 8000; // 3s in dev, 8s in production
+      const baseDelay = isDevelopment ? 2000 : (isVercel ? 3000 : 4000); // 2s dev, 3s Vercel, 4s other prod
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
@@ -1535,8 +1548,8 @@ Ejemplo cuando no hay datos:
             addLog(`❌ Gemini failed after ${maxRetries} attempts`, "error");
             return finalErrorResult;
           }
-          // Wait before retrying - environment aware delay
-          const retryDelay = isDevelopment ? 1500 : 3000;
+          // Wait before retrying - optimized delay
+          const retryDelay = isDevelopment ? 1000 : (isVercel ? 1500 : 2000); // 1s dev, 1.5s Vercel, 2s other prod
           await new Promise((resolve) => setTimeout(resolve, retryDelay));
         }
       }
