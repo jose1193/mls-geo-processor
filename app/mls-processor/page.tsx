@@ -255,7 +255,7 @@ export default function MLSProcessorPage() {
                   alert("✅ API usage reset correctly");
                 }
               }}
-              className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded text-sm cursor-pointer"
+              className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded text-sm cursor-pointer hidden"
             >
               🔄 Reset API Usage
             </button>
@@ -498,7 +498,7 @@ export default function MLSProcessorPage() {
 
                 <button
                   onClick={discardProgress}
-                  className="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer"
+                  className="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer hidden"
                 >
                   🗑️ Start Fresh
                 </button>

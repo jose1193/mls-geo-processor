@@ -251,7 +251,7 @@ export function APIStatus({ apiLimits, stats }: APIStatusProps) {
             <span className="font-medium">3. Geocodio Fallback</span> → Only if
             Mapbox completely fails
           </div>
-          <div className="mt-2 p-2 bg-yellow-50 rounded border-l-2 border-yellow-400">
+          <div className="mt-2 p-2 bg-yellow-50 rounded border-l-2 border-yellow-400 hidden">
             <span className="font-medium text-yellow-700">⚠️ Auto-Stop:</span>{" "}
             Processing stops when any API limit is reached
           </div>
