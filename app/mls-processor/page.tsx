@@ -29,7 +29,6 @@ export default function MLSProcessorPage() {
 
   const {
     stats,
-    apiUsage,
     apiLimits,
     logs,
     isProcessing,
@@ -122,7 +121,7 @@ export default function MLSProcessorPage() {
         <StatsGrid stats={stats} />
 
         {/* API Status */}
-        <APIStatus apiUsage={apiUsage} apiLimits={apiLimits} />
+        <APIStatus apiLimits={apiLimits} stats={stats} />
 
         {/* Debug Panel - Remove in production */}
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
