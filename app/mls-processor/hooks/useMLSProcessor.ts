@@ -156,14 +156,14 @@ export interface FileData {
 
 // Constants - Dynamic delays based on environment
 const isDevelopment = process.env.NODE_ENV === "development";
-const DELAY_BETWEEN_REQUESTS = isDevelopment ? 500 : 1500; // Shorter delay in dev, longer in production
-const GEMINI_DELAY = isDevelopment ? 1000 : 3000; // Shorter delay in dev, longer in production
+const DELAY_BETWEEN_REQUESTS = isDevelopment ? 500 : 2500; // Shorter delay in dev, longer in production
+const GEMINI_DELAY = isDevelopment ? 1000 : 5000; // Shorter delay in dev, longer in production
 
 // API Limits Configuration - Configurable limits for each service
 const API_LIMITS: APILimits = {
-  mapbox: 50000, // Mapbox free tier limit
+  mapbox: 5, // Mapbox free tier limit
   geocodio: 50000, // Geocodio premium tier limit
-  gemini: 100000, // Gemini premium - 100k requests
+  gemini: 5, // Gemini premium - 100k requests
 };
 
 // Storage keys
@@ -232,6 +232,14 @@ export function useMLSProcessor() {
   );
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showApiLimitModal, setShowApiLimitModal] = useState(false);
+  const [apiLimitData, setApiLimitData] = useState<{
+    limitReached: string;
+    currentResults: ProcessedResult[];
+    currentIndex: number;
+    totalAddresses: number;
+    fileName: string;
+  } | null>(null);
 
   // Helper function to normalize neighborhood/community values
   const normalizeValue = useCallback(
@@ -376,6 +384,17 @@ export function useMLSProcessor() {
     [apiUsage]
   );
 
+  const checkAllApiLimits = useCallback(
+    (currentStats: Stats): string | null => {
+      // Use the passed currentStats instead of the potentially stale state
+      if (currentStats.mapboxCount >= API_LIMITS.mapbox) return "Mapbox";
+      if (currentStats.geocodioCount >= API_LIMITS.geocodio) return "Geocodio";
+      if (currentStats.geminiCount >= API_LIMITS.gemini) return "Gemini";
+      return null;
+    },
+    []
+  );
+
   const addLog = useCallback(
     (message: string, type: LogEntry["type"] = "info") => {
       logIdCounter.current += 1;
@@ -389,6 +408,30 @@ export function useMLSProcessor() {
       console.log(`[${type.toUpperCase()}] ${message}`);
     },
     []
+  );
+
+  const showApiLimitReachedModal = useCallback(
+    (
+      limitReached: string,
+      currentResults: ProcessedResult[],
+      currentIndex: number,
+      totalAddresses: number,
+      fileName: string
+    ) => {
+      setApiLimitData({
+        limitReached,
+        currentResults,
+        currentIndex,
+        totalAddresses,
+        fileName,
+      });
+      setShowApiLimitModal(true);
+      addLog(
+        `🚫 ${limitReached} API limit reached. Processing paused at ${currentIndex}/${totalAddresses}`,
+        "warning"
+      );
+    },
+    [addLog]
   );
 
   // Cache and Recovery Functions
@@ -1181,7 +1224,7 @@ Ejemplo cuando no hay datos:
 
       // Retry configuration for free account - environment aware
       const maxRetries = 3;
-      const baseDelay = isDevelopment ? 3000 : 6000; // 3s in dev, 6s in production
+      const baseDelay = isDevelopment ? 3000 : 8000; // 3s in dev, 8s in production
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
@@ -1649,7 +1692,7 @@ Ejemplo cuando no hay datos:
           }
 
           // Add delay between requests - environment aware
-          const mapboxDelay = isDevelopment ? 500 : 1500;
+          const mapboxDelay = isDevelopment ? 500 : 2000;
           await new Promise((resolve) => setTimeout(resolve, mapboxDelay));
         } else {
           // Mapbox failed, use Geocodio as fallback
@@ -1813,6 +1856,44 @@ Ejemplo cuando no hay datos:
             break;
           }
 
+          // Check API limits before processing each address using current stats
+          const currentStatsForCheck = {
+            totalProcessed: i + 1,
+            successRate: `${Math.round((successCount / (i + 1)) * 100)}%`,
+            mapboxCount: currentStats.mapboxCount,
+            geocodioCount: currentStats.geocodioCount,
+            geminiCount: currentStats.geminiCount,
+          };
+          const limitReached = checkAllApiLimits(currentStatsForCheck);
+          console.log(
+            `🔍 API Limit Check - Mapbox: ${currentStatsForCheck.mapboxCount}/${API_LIMITS.mapbox}, Geocodio: ${currentStatsForCheck.geocodioCount}/${API_LIMITS.geocodio}, Gemini: ${currentStatsForCheck.geminiCount}/${API_LIMITS.gemini}, Limit Reached: ${limitReached}`
+          );
+
+          if (limitReached) {
+            console.log(
+              `🚫 API Limit reached for ${limitReached}! Showing modal...`
+            );
+            showApiLimitReachedModal(
+              limitReached,
+              results,
+              i,
+              validAddresses.length,
+              file.name
+            );
+            // Save current progress
+            saveProgress(
+              results,
+              i,
+              validAddresses.length,
+              file.name,
+              currentStats,
+              detectedCols,
+              validAddresses
+            );
+            setIsProcessing(false);
+            return; // Stop processing and show modal
+          }
+
           const addressData = validAddresses[i];
           const address = String(addressData[detectedCols.address!]);
 
@@ -1869,15 +1950,36 @@ Ejemplo cuando no hay datos:
             successCount++;
           }
 
-          // Si el resultado NO es cacheado, actualiza stats como antes
-          if (!result || !getCachedAddressResult(address)) {
-            const newStats = {
-              ...currentStats,
-              totalProcessed: i + 1,
-              successRate: `${Math.round((successCount / (i + 1)) * 100)}%`,
-            };
-            setStats(newStats);
+          // Update currentStats for API limit checking
+          if (result.api_source) {
+            if (result.api_source.includes("Mapbox")) {
+              currentStats = {
+                ...currentStats,
+                mapboxCount: currentStats.mapboxCount + 1,
+              };
+            }
+            if (result.api_source.includes("Geocodio")) {
+              currentStats = {
+                ...currentStats,
+                geocodioCount: currentStats.geocodioCount + 1,
+              };
+            }
+            if (result.api_source.includes("Gemini")) {
+              currentStats = {
+                ...currentStats,
+                geminiCount: currentStats.geminiCount + 1,
+              };
+            }
           }
+
+          // Update stats state
+          const newStats = {
+            ...currentStats,
+            totalProcessed: i + 1,
+            successRate: `${Math.round((successCount / (i + 1)) * 100)}%`,
+          };
+          currentStats = newStats;
+          setStats(newStats);
 
           // Add to results immediately for real-time display
           setResults([...results]);
@@ -1946,6 +2048,8 @@ Ejemplo cuando no hay datos:
       cacheAddressResult,
       saveProgress,
       clearProgress,
+      checkAllApiLimits,
+      showApiLimitReachedModal,
     ]
   );
 
@@ -2193,6 +2297,139 @@ Ejemplo cuando no hay datos:
     addLog("File preview opened", "info");
   }, [fileData, addLog]);
 
+  // API Limit Modal functions
+  const downloadApiLimitPartialResults = useCallback(() => {
+    if (!apiLimitData || apiLimitData.currentResults.length === 0) {
+      alert("No partial results to download");
+      return;
+    }
+
+    const headers = [
+      "ML#",
+      "Address",
+      "Zip Code",
+      "City Name",
+      "County",
+      "House Number",
+      "Latitude",
+      "Longitude",
+      "Neighborhoods",
+      "Fuente Neighborhood",
+      "Comunidades",
+      "Fuente Community",
+      "Estado",
+      "Fuente API",
+    ];
+
+    const csvContent = [
+      headers.join(","),
+      ...apiLimitData.currentResults.map((result) =>
+        [
+          `"${
+            result["ML#"] ||
+            result["MLS#"] ||
+            result["MLSNumber"] ||
+            result["MLS Number"] ||
+            result["ListingID"] ||
+            result["Listing ID"] ||
+            ""
+          }"`,
+          `"${
+            result.original_address ||
+            result["Address"] ||
+            result["Internet Display"] ||
+            ""
+          }"`,
+          `"${result["Zip Code"] || ""}"`,
+          `"${result["City Name"] || ""}"`,
+          `"${result["County"] || ""}"`,
+          `"${result["House Number"] || ""}"`,
+          result.latitude || "",
+          result.longitude || "",
+          `"${result.neighborhoods || "N/A"}"`,
+          `"${result.neighborhood_source || "N/A"}"`,
+          `"${result.comunidades || "N/A"}"`,
+          `"${result.community_source || "N/A"}"`,
+          result.status || "",
+          `"${result.api_source || ""}"`,
+        ].join(",")
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `api_limit_partial_results_${apiLimitData.limitReached.toLowerCase()}_${
+      apiLimitData.currentIndex
+    }_${new Date().getTime()}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+
+    addLog(
+      `📥 ${apiLimitData.limitReached} API limit - Partial results downloaded successfully`,
+      "success"
+    );
+
+    // Close modal after download
+    setShowApiLimitModal(false);
+    setApiLimitData(null);
+  }, [apiLimitData, addLog]);
+
+  const continueProcessingIgnoreLimit = useCallback(() => {
+    if (!apiLimitData) return;
+
+    addLog(
+      `⚠️ Continuing processing despite ${apiLimitData.limitReached} API limit reached. This may result in API errors.`,
+      "warning"
+    );
+
+    // Close modal
+    setShowApiLimitModal(false);
+
+    // Create a dummy file with the saved data to continue processing
+    const dummyFile = new File([], apiLimitData.fileName);
+
+    // Create recovery-like data from the current API limit data
+    const recoveryLikeData = {
+      results: apiLimitData.currentResults,
+      currentIndex: apiLimitData.currentIndex,
+      totalAddresses: apiLimitData.totalAddresses,
+      fileName: apiLimitData.fileName,
+      timestamp: Date.now(),
+      stats: {
+        totalProcessed: apiLimitData.currentResults.length,
+        successRate: `${Math.round(
+          (apiLimitData.currentResults.filter((r) => r.status === "success")
+            .length /
+            apiLimitData.currentResults.length) *
+            100
+        )}%`,
+        mapboxCount: stats.mapboxCount,
+        geocodioCount: stats.geocodioCount,
+        geminiCount: stats.geminiCount,
+      },
+      detectedColumns: detectedColumns,
+      validAddresses: fileData?.data || [],
+    };
+
+    // Set the recovery data temporarily
+    setRecoveryData(recoveryLikeData);
+
+    // Clear the API limit data
+    setApiLimitData(null);
+
+    // Continue processing with ignore limit flag
+    setTimeout(() => {
+      processFile(dummyFile, true);
+    }, 100);
+  }, [apiLimitData, addLog, stats, detectedColumns, fileData, processFile]);
+
+  const closeApiLimitModal = useCallback(() => {
+    setShowApiLimitModal(false);
+    setApiLimitData(null);
+    addLog("API limit modal closed", "info");
+  }, [addLog]);
+
   return {
     stats,
     apiUsage,
@@ -2222,5 +2459,12 @@ Ejemplo cuando no hay datos:
     // Success modal
     showSuccessModal,
     setShowSuccessModal,
+    // API Limit Modal
+    showApiLimitModal,
+    setShowApiLimitModal,
+    apiLimitData,
+    downloadApiLimitPartialResults,
+    continueProcessingIgnoreLimit,
+    closeApiLimitModal,
   };
 }

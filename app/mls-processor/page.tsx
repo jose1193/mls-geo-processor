@@ -54,6 +54,12 @@ export default function MLSProcessorPage() {
     // Success modal
     showSuccessModal,
     setShowSuccessModal,
+    // API Limit Modal
+    showApiLimitModal,
+    apiLimitData,
+    downloadApiLimitPartialResults,
+    continueProcessingIgnoreLimit,
+    closeApiLimitModal,
   } = useMLSProcessor();
 
   // Debug recovery state
@@ -573,6 +579,95 @@ export default function MLSProcessorPage() {
                   className="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer"
                 >
                   ✅ OK
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* API Limit Modal */}
+        {showApiLimitModal && apiLimitData && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-8 max-w-md mx-4 shadow-2xl relative">
+              {/* Close X button */}
+              <button
+                onClick={closeApiLimitModal}
+                className="absolute top-3 right-3 bg-gray-500 hover:bg-gray-600 text-white rounded-full w-8 h-8 flex items-center justify-center transition-colors cursor-pointer shadow-lg"
+                title="Close dialog"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+
+              <div className="text-center mb-6">
+                <div className="text-6xl mb-4">🚫</div>
+                <h2 className="text-2xl font-bold text-red-800 mb-2">
+                  API Limit Reached
+                </h2>
+                <p className="text-gray-600">
+                  The {apiLimitData.limitReached} API has reached its daily
+                  limit. Processing has been paused.
+                </p>
+              </div>
+
+              <div className="bg-red-50 rounded-lg p-4 mb-6">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-semibold text-gray-700">API:</span>
+                  <span className="text-red-600 font-bold">
+                    {apiLimitData.limitReached}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-semibold text-gray-700">File:</span>
+                  <span className="text-blue-600">{apiLimitData.fileName}</span>
+                </div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-semibold text-gray-700">Progress:</span>
+                  <span className="text-orange-600">
+                    {apiLimitData.currentIndex} / {apiLimitData.totalAddresses}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold text-gray-700">
+                    Processed:
+                  </span>
+                  <span className="text-green-600">
+                    {apiLimitData.currentResults.length} addresses
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  onClick={downloadApiLimitPartialResults}
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer"
+                >
+                  📥 Stop & Download Partial Results
+                </button>
+
+                <button
+                  onClick={continueProcessingIgnoreLimit}
+                  className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer"
+                >
+                  ⚠️ Continue Processing (Ignore Limit)
+                </button>
+
+                <button
+                  onClick={closeApiLimitModal}
+                  className="w-full bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer"
+                >
+                  ❌ Close Modal
                 </button>
               </div>
             </div>
