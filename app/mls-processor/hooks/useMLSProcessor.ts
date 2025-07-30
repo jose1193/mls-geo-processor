@@ -154,14 +154,27 @@ export interface FileData {
   fileName: string;
 }
 
-// Constants - Dynamic delays based on environment
+// Constants - Optimized delays for consistent behavior across environments
 const isDevelopment = process.env.NODE_ENV === "development";
-const DELAY_BETWEEN_REQUESTS = isDevelopment ? 500 : 1500; // Shorter delay in dev, longer in production
-const GEMINI_DELAY = isDevelopment ? 1000 : 3000; // Shorter delay in dev, longer in production
+const isVercel = process.env.VERCEL === "1"; // Vercel-specific detection
+const isProduction = process.env.NODE_ENV === "production";
+
+// Debug environment detection
+console.log("🔍 Environment Detection:", {
+  NODE_ENV: process.env.NODE_ENV,
+  VERCEL: process.env.VERCEL,
+  isDevelopment,
+  isVercel,
+  isProduction,
+});
+
+// More conservative delays that work well in all environments
+const DELAY_BETWEEN_REQUESTS = isDevelopment ? 800 : isVercel ? 1500 : 2000; // 800ms dev, 1.5s Vercel, 2s other prod
+const GEMINI_DELAY = isDevelopment ? 1200 : isVercel ? 2000 : 3000; // 1.2s dev, 2s Vercel, 3s other prod
 
 // API Limits Configuration - Configurable limits for each service
 const API_LIMITS: APILimits = {
-  mapbox: 100000, // Mapbox free tier limit
+  mapbox: 50000, // Mapbox free tier limit
   geocodio: 50000, // Geocodio premium tier limit
   gemini: 100000, // Gemini premium - 100k requests
 };
@@ -189,10 +202,6 @@ export function useMLSProcessor() {
   const logIdCounter = useRef(0);
   // Control flag to stop processing
   const shouldStopProcessing = useRef(false);
-  // Flag to prevent multiple recovery dialogs
-  const hasShownRecoveryDialog = useRef(false);
-  // Flag to prevent duplicate API usage updates
-  const lastApiUsageUpdate = useRef<{ [key: string]: number }>({});
 
   const [stats, setStats] = useState<Stats>({
     totalProcessed: 0,
@@ -237,11 +246,16 @@ export function useMLSProcessor() {
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showApiLimitModal, setShowApiLimitModal] = useState(false);
-  const [apiLimitInfo, setApiLimitInfo] = useState<{
-    service: string;
-    used: number;
-    limit: number;
+  const [apiLimitData, setApiLimitData] = useState<{
+    limitReached: string;
+    currentResults: ProcessedResult[];
+    currentIndex: number;
+    totalAddresses: number;
+    fileName: string;
   } | null>(null);
+
+  // Add this state to track when limits should be ignored
+  const [ignoreLimits, setIgnoreLimits] = useState(false);
 
   // Helper function to normalize neighborhood/community values
   const normalizeValue = useCallback(
@@ -326,22 +340,8 @@ export function useMLSProcessor() {
 
   const updateApiUsage = useCallback(
     (service: "mapbox" | "geocodio" | "gemini", increment = 1) => {
-      // Prevent duplicate updates within 100ms
-      const now = Date.now();
-      const lastUpdate = lastApiUsageUpdate.current[service] || 0;
-      if (now - lastUpdate < 100) {
-        console.log(`🚫 Preventing duplicate API usage update for ${service}`);
-        return;
-      }
-      lastApiUsageUpdate.current[service] = now;
-
       setApiUsage((prev) => {
         const newUsage = { ...prev };
-
-        console.log(`📊 Updating API Usage for ${service}:`, {
-          before: prev,
-          increment,
-        });
 
         switch (service) {
           case "mapbox":
@@ -376,16 +376,6 @@ export function useMLSProcessor() {
             break;
         }
 
-        console.log(`📊 API Usage updated for ${service}:`, {
-          after: newUsage,
-          shouldTriggerLimit:
-            service === "mapbox"
-              ? newUsage.mapboxUsed >= API_LIMITS.mapbox
-              : service === "geocodio"
-              ? newUsage.geocodioUsed >= API_LIMITS.geocodio
-              : newUsage.geminiUsed >= API_LIMITS.gemini,
-        });
-
         // Save to localStorage
         saveApiUsage(newUsage);
         return newUsage;
@@ -396,39 +386,39 @@ export function useMLSProcessor() {
 
   const checkApiLimit = useCallback(
     (service: "mapbox" | "geocodio" | "gemini"): boolean => {
-      const isWithinLimit = (() => {
-        switch (service) {
-          case "mapbox":
-            return apiUsage.mapboxUsed < API_LIMITS.mapbox;
-          case "geocodio":
-            return apiUsage.geocodioUsed < API_LIMITS.geocodio;
-          case "gemini":
-            return apiUsage.geminiUsed < API_LIMITS.gemini;
-          default:
-            return false;
-        }
-      })();
+      // If limits are being ignored, always return true
+      if (ignoreLimits) {
+        return true;
+      }
 
-      // Debug logging
-      console.log(`🔍 API Limit Check for ${service}:`, {
-        used:
-          service === "mapbox"
-            ? apiUsage.mapboxUsed
-            : service === "geocodio"
-            ? apiUsage.geocodioUsed
-            : apiUsage.geminiUsed,
-        limit:
-          service === "mapbox"
-            ? API_LIMITS.mapbox
-            : service === "geocodio"
-            ? API_LIMITS.geocodio
-            : API_LIMITS.gemini,
-        withinLimit: isWithinLimit,
-      });
-
-      return isWithinLimit;
+      switch (service) {
+        case "mapbox":
+          return apiUsage.mapboxUsed < API_LIMITS.mapbox;
+        case "geocodio":
+          return apiUsage.geocodioUsed < API_LIMITS.geocodio;
+        case "gemini":
+          return apiUsage.geminiUsed < API_LIMITS.gemini;
+        default:
+          return false;
+      }
     },
-    [apiUsage]
+    [apiUsage, ignoreLimits] // Add ignoreLimits to dependencies
+  );
+
+  const checkAllApiLimits = useCallback(
+    (currentStats: Stats): string | null => {
+      // If limits are being ignored, always return null (no limit reached)
+      if (ignoreLimits) {
+        return null;
+      }
+
+      // Use the passed currentStats instead of the potentially stale state
+      if (currentStats.mapboxCount >= API_LIMITS.mapbox) return "Mapbox";
+      if (currentStats.geocodioCount >= API_LIMITS.geocodio) return "Geocodio";
+      if (currentStats.geminiCount >= API_LIMITS.gemini) return "Gemini";
+      return null;
+    },
+    [ignoreLimits] // Add ignoreLimits to dependencies
   );
 
   const addLog = useCallback(
@@ -446,57 +436,37 @@ export function useMLSProcessor() {
     []
   );
 
-  const handleApiLimitReached = useCallback(
-    (service: "mapbox" | "geocodio" | "gemini") => {
-      console.log(`🚫 API Limit Reached Handler Called for ${service}:`, {
-        currentUsage: apiUsage,
-        limits: API_LIMITS,
+  const showApiLimitReachedModal = useCallback(
+    (
+      limitReached: string,
+      currentResults: ProcessedResult[],
+      currentIndex: number,
+      totalAddresses: number,
+      fileName: string
+    ) => {
+      // If limits are being ignored, do not show the modal again
+      if (ignoreLimits) {
+        addLog(
+          `API limit (${limitReached}) reached, but ignoring limits as requested. Continuing without showing modal.`,
+          "info"
+        );
+        return;
+      }
+      setApiLimitData({
+        limitReached,
+        currentResults,
+        currentIndex,
+        totalAddresses,
+        fileName,
       });
-
-      const serviceInfo = {
-        mapbox: { used: apiUsage.mapboxUsed, limit: API_LIMITS.mapbox },
-        geocodio: { used: apiUsage.geocodioUsed, limit: API_LIMITS.geocodio },
-        gemini: { used: apiUsage.geminiUsed, limit: API_LIMITS.gemini },
-      };
-
-      setApiLimitInfo({
-        service: service.charAt(0).toUpperCase() + service.slice(1),
-        used: serviceInfo[service].used,
-        limit: serviceInfo[service].limit,
-      });
-
-      console.log(`🚫 Setting API Limit Modal to true for ${service}`);
       setShowApiLimitModal(true);
-
-      // Stop processing immediately
-      shouldStopProcessing.current = true;
-      setIsProcessing(false);
-
       addLog(
-        `🚫 ${service.toUpperCase()} API limit reached (${
-          serviceInfo[service].used
-        }/${serviceInfo[service].limit}). Processing stopped.`,
-        "error"
+        `🚫 ${limitReached} API limit reached. Processing paused at ${currentIndex}/${totalAddresses}`,
+        "warning"
       );
     },
-    [apiUsage, addLog]
+    [addLog, ignoreLimits]
   );
-
-  const closeApiLimitModal = useCallback(() => {
-    setShowApiLimitModal(false);
-    setApiLimitInfo(null);
-  }, []);
-
-  const continueWithOtherApis = useCallback(() => {
-    setShowApiLimitModal(false);
-    setApiLimitInfo(null);
-
-    // Allow processing to continue (remove the stop flag)
-    shouldStopProcessing.current = false;
-    setIsProcessing(true);
-
-    addLog("🔄 Continuing processing with remaining APIs...", "info");
-  }, [addLog]);
 
   // Cache and Recovery Functions
   const saveProgress = useCallback(
@@ -537,9 +507,11 @@ export function useMLSProcessor() {
 
   // Initialize log only on client side to avoid hydration mismatch
   useEffect(() => {
-    // Initialize logs with environment info
+    // Initialize logs with detailed environment info
     const environmentInfo = `Environment: ${
       process.env.NODE_ENV || "development"
+    } | Vercel: ${
+      isVercel ? "Yes" : "No"
     } | Delays: Requests=${DELAY_BETWEEN_REQUESTS}ms, Gemini=${GEMINI_DELAY}ms`;
 
     setLogs([
@@ -560,12 +532,6 @@ export function useMLSProcessor() {
     // Check for recovery data on startup with multiple attempts
     const checkRecovery = () => {
       console.log("🔍 Starting recovery check...");
-
-      // Prevent showing dialog if it's already been shown
-      if (hasShownRecoveryDialog.current) {
-        console.log("⏸️ Recovery check skipped - dialog already shown");
-        return;
-      }
 
       try {
         // Check if localStorage is available
@@ -633,9 +599,6 @@ export function useMLSProcessor() {
 
           console.log("✅ Valid recovery data found, setting states...");
 
-          // Mark that we've shown the recovery dialog
-          hasShownRecoveryDialog.current = true;
-
           // Set recovery data first
           setRecoveryData(data);
 
@@ -690,7 +653,7 @@ export function useMLSProcessor() {
       clearTimeout(timeoutId3);
       clearTimeout(timeoutId4);
     };
-  }, []); // Empty dependency array to run only once on mount - checkRecovery closure captures current state
+  }, []); // Empty dependency array to run only once on mount
 
   // Initialize API usage tracking
   useEffect(() => {
@@ -779,8 +742,8 @@ export function useMLSProcessor() {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(CACHE_KEY);
     localStorage.removeItem(GEMINI_CACHE_KEY);
-    // DON'T clear API usage - it should persist for the day
-    console.log("🗑️ Progress cache cleared (API usage preserved)");
+    localStorage.removeItem(API_USAGE_KEY); // Clear API usage tracking too
+    console.log("🗑️ Progress cache and API usage cleared");
   }, []);
 
   const resetApiUsage = useCallback(() => {
@@ -1014,7 +977,10 @@ export function useMLSProcessor() {
 
       // Check API limit before making request
       if (!checkApiLimit("mapbox")) {
-        handleApiLimitReached("mapbox");
+        addLog(
+          `🚫 Mapbox API limit reached (${apiUsage.mapboxUsed}/${API_LIMITS.mapbox}). Skipping request for: ${address}`,
+          "warning"
+        );
         return {
           success: false as const,
           error: `Mapbox API limit reached (${apiUsage.mapboxUsed}/${API_LIMITS.mapbox})`,
@@ -1030,15 +996,15 @@ export function useMLSProcessor() {
           mapboxCount: prev.mapboxCount + 1,
         }));
 
+        // Update API usage tracking
+        updateApiUsage("mapbox");
+
         const response = await fetch(url);
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
         const data = await response.json();
-
-        // Update API usage tracking AFTER successful response
-        updateApiUsage("mapbox");
 
         if (data.features && data.features.length > 0) {
           const feature = data.features[0];
@@ -1119,13 +1085,7 @@ export function useMLSProcessor() {
         return { success: false as const, error: (error as Error).message };
       }
     },
-    [
-      addLog,
-      checkApiLimit,
-      updateApiUsage,
-      handleApiLimitReached,
-      apiUsage.mapboxUsed,
-    ]
+    [addLog, checkApiLimit, updateApiUsage, apiUsage.mapboxUsed]
   );
 
   // Geocode with Geocodio as backup
@@ -1143,7 +1103,10 @@ export function useMLSProcessor() {
 
       // Check API limit before making request
       if (!checkApiLimit("geocodio")) {
-        handleApiLimitReached("geocodio");
+        addLog(
+          `🚫 Geocodio API limit reached (${apiUsage.geocodioUsed}/${API_LIMITS.geocodio}). Skipping request for: ${address}`,
+          "warning"
+        );
         return {
           success: false as const,
           error: `Geocodio API limit reached (${apiUsage.geocodioUsed}/${API_LIMITS.geocodio})`,
@@ -1157,15 +1120,15 @@ export function useMLSProcessor() {
           geocodioCount: prev.geocodioCount + 1,
         }));
 
+        // Update API usage tracking
+        updateApiUsage("geocodio");
+
         const response = await fetch(url);
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
         const data = await response.json();
-
-        // Update API usage tracking AFTER successful response
-        updateApiUsage("geocodio");
 
         if (data.results && data.results.length > 0) {
           const result = data.results[0];
@@ -1210,13 +1173,7 @@ export function useMLSProcessor() {
         return { success: false as const, error: (error as Error).message };
       }
     },
-    [
-      addLog,
-      checkApiLimit,
-      updateApiUsage,
-      handleApiLimitReached,
-      apiUsage.geocodioUsed,
-    ]
+    [addLog, checkApiLimit, updateApiUsage, apiUsage.geocodioUsed]
   );
 
   // Get neighborhood from Gemini with optimized prompt and retry logic
@@ -1291,16 +1248,19 @@ Ejemplo cuando no hay datos:
 
       // Check API limit before making request
       if (!checkApiLimit("gemini")) {
-        handleApiLimitReached("gemini");
+        addLog(
+          `🚫 Gemini API limit reached (${apiUsage.geminiUsed}/${API_LIMITS.gemini}). Skipping request for: ${fullAddress}`,
+          "warning"
+        );
         return {
           success: false as const,
           error: `Gemini API limit reached (${apiUsage.geminiUsed}/${API_LIMITS.gemini})`,
         };
       }
 
-      // Retry configuration for free account - environment aware
+      // Retry configuration - optimized for consistent behavior
       const maxRetries = 3;
-      const baseDelay = isDevelopment ? 3000 : 6000; // 3s in dev, 6s in production
+      const baseDelay = isDevelopment ? 2000 : isVercel ? 3000 : 4000; // 2s dev, 3s Vercel, 4s other prod
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
@@ -1309,6 +1269,9 @@ Ejemplo cuando no hay datos:
             "info"
           );
           setStats((prev) => ({ ...prev, geminiCount: prev.geminiCount + 1 }));
+
+          // Update API usage tracking
+          updateApiUsage("gemini");
 
           const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
@@ -1507,9 +1470,6 @@ Ejemplo cuando no hay datos:
                 console.log("✅ Gemini Parsed Result:", result);
                 addLog(`✅ Gemini success on attempt ${attempt}`, "success");
 
-                // Update API usage tracking AFTER successful response
-                updateApiUsage("gemini");
-
                 // Cache successful result
                 cacheGeminiResult(address, city, county, result);
                 return result;
@@ -1573,9 +1533,6 @@ Ejemplo cuando no hay datos:
                   };
                   addLog(`✅ Gemini success on attempt ${attempt}`, "success");
 
-                  // Update API usage tracking AFTER successful response
-                  updateApiUsage("gemini");
-
                   // Cache successful result
                   cacheGeminiResult(address, city, county, result);
                   return result;
@@ -1614,8 +1571,8 @@ Ejemplo cuando no hay datos:
             addLog(`❌ Gemini failed after ${maxRetries} attempts`, "error");
             return finalErrorResult;
           }
-          // Wait before retrying - environment aware delay
-          const retryDelay = isDevelopment ? 1500 : 3000;
+          // Wait before retrying - optimized delay
+          const retryDelay = isDevelopment ? 1000 : isVercel ? 1500 : 2000; // 1s dev, 1.5s Vercel, 2s other prod
           await new Promise((resolve) => setTimeout(resolve, retryDelay));
         }
       }
@@ -1634,7 +1591,6 @@ Ejemplo cuando no hay datos:
       cacheGeminiResult,
       checkApiLimit,
       updateApiUsage,
-      handleApiLimitReached,
       apiUsage.geminiUsed,
     ]
   );
@@ -1772,7 +1728,7 @@ Ejemplo cuando no hay datos:
           }
 
           // Add delay between requests - environment aware
-          const mapboxDelay = isDevelopment ? 500 : 1500;
+          const mapboxDelay = isDevelopment ? 500 : 2000;
           await new Promise((resolve) => setTimeout(resolve, mapboxDelay));
         } else {
           // Mapbox failed, use Geocodio as fallback
@@ -1845,29 +1801,32 @@ Ejemplo cuando no hay datos:
     ]
   );
 
+  // Allow processFile to accept either a File or in-memory data
+  type ProcessFileInput =
+    | File
+    | { name: string; data: MLSData[]; columns: string[] };
   const processFile = useCallback(
-    async (file: File, continueFromProgress = false) => {
+    async (input: ProcessFileInput, continueFromProgress = false) => {
       try {
+        const BATCH_SIZE = 100; // Puedes ajustar este valor
         let validAddresses: MLSData[];
         let detectedCols: DetectedColumns;
         let startIndex = 0;
         let existingResults: ProcessedResult[] = [];
         let currentStats = stats;
+        let fileName = "";
 
         if (continueFromProgress && recoveryData) {
-          // Continue from saved progress
           addLog(
             `🔄 Continuing from saved progress: ${recoveryData.currentIndex}/${recoveryData.totalAddresses}`,
             "info"
           );
-
           validAddresses = recoveryData.validAddresses;
           detectedCols = recoveryData.detectedColumns;
           startIndex = recoveryData.currentIndex;
           existingResults = recoveryData.results;
           currentStats = recoveryData.stats;
-
-          // Restore states
+          fileName = recoveryData.fileName;
           setStats(currentStats);
           setResults(existingResults);
           setDetectedColumns(detectedCols);
@@ -1876,176 +1835,193 @@ Ejemplo cuando no hay datos:
             columns: Object.keys(validAddresses[0] || {}),
             fileName: recoveryData.fileName,
           });
-
-          // Clear recovery dialog
           setShowRecoveryDialog(false);
-          setRecoveryData(null);
         } else {
-          // Start fresh processing
-          addLog(`Loading file: ${file.name}`, "info");
-          setResults([]);
-
-          // Clear any previous progress
-          clearProgress();
-
-          // Read file
-          const data = await readFile(file);
-
-          if (data.length === 0) {
-            throw new Error("The file is empty");
+          let data: MLSData[];
+          let columns: string[];
+          if (input instanceof File) {
+            addLog(`Loading file: ${input.name}`, "info");
+            setResults([]);
+            clearProgress();
+            data = await readFile(input);
+            fileName = input.name;
+            if (data.length === 0) {
+              throw new Error("The file is empty");
+            }
+            columns = Object.keys(data[0] || {});
+          } else {
+            data = input.data;
+            columns = input.columns;
+            fileName = input.name;
+            setResults([]);
+            clearProgress();
           }
-
-          // Store file data for preview
-          const columns = Object.keys(data[0] || {});
           setFileData({
             data,
             columns,
-            fileName: file.name,
+            fileName,
           });
-
-          // Detect columns
           detectedCols = detectColumns(columns);
-
           if (!detectedCols.address) {
             throw new Error("Could not detect address column");
           }
-
-          // Filter valid addresses
           validAddresses = data.filter(
             (row) =>
               row[detectedCols.address!] &&
               String(row[detectedCols.address!]).trim()
           );
-
           addLog(`Processing ${validAddresses.length} valid addresses`, "info");
         }
 
         setIsProcessing(true);
         shouldStopProcessing.current = false;
-
-        // Process each address starting from the appropriate index
         const results: ProcessedResult[] = [...existingResults];
         let successCount = existingResults.filter(
           (r) => r.status === "success"
         ).length;
 
-        for (let i = startIndex; i < validAddresses.length; i++) {
-          // Check if processing should stop
+        for (let i = startIndex; i < validAddresses.length; i += BATCH_SIZE) {
           if (shouldStopProcessing.current) {
             addLog("Processing stopped by user", "warning");
             break;
           }
 
-          const addressData = validAddresses[i];
-          const address = String(addressData[detectedCols.address!]);
-
-          // Update progress
-          setProgress({
-            current: i + 1,
-            total: validAddresses.length,
-            percentage: Math.round(((i + 1) / validAddresses.length) * 100),
-            currentAddress: address,
-          });
-
-          // Check cache first
-          let result = getCachedAddressResult(address);
-
-          if (result) {
-            // Use cached result
-            result = { ...result, ...addressData }; // Merge with original data
-            // Detect api_source and increment corresponding counter
-            let mapboxInc = 0,
-              geocodioInc = 0,
-              geminiInc = 0;
-            if (result.api_source) {
-              if (result.api_source.includes("Mapbox")) mapboxInc = 1;
-              if (result.api_source.includes("Geocodio")) geocodioInc = 1;
-              if (result.api_source.includes("Gemini")) geminiInc = 1;
-            }
-            setStats((prev) => ({
-              ...prev,
-              totalProcessed: i + 1,
-              successRate: `${Math.round((successCount / (i + 1)) * 100)}%`,
-              mapboxCount: prev.mapboxCount + mapboxInc,
-              geocodioCount: prev.geocodioCount + geocodioInc,
-              geminiCount: prev.geminiCount + geminiInc,
-            }));
-            addLog(
-              `📄 Using cached result for: ${address}${
-                result.api_source ? ` | Source: ${result.api_source}` : ""
-              }`,
-              "info"
+          // Check API limits before processing each batch
+          const currentStatsForCheck = {
+            totalProcessed: i + 1,
+            successRate: `${Math.round((successCount / (i + 1)) * 100)}%`,
+            mapboxCount: currentStats.mapboxCount,
+            geocodioCount: currentStats.geocodioCount,
+            geminiCount: currentStats.geminiCount,
+          };
+          const limitReached = checkAllApiLimits(currentStatsForCheck);
+          if (limitReached) {
+            showApiLimitReachedModal(
+              limitReached,
+              results,
+              i,
+              validAddresses.length,
+              fileName
             );
-          } else {
-            // Process address normally
-            result = await processAddress(addressData, detectedCols);
-
-            // Cache successful results
-            if (result.status === "success") {
-              cacheAddressResult(address, result);
-            }
-          }
-
-          results.push(result);
-
-          if (result.status === "success") {
-            successCount++;
-          }
-
-          // Si el resultado NO es cacheado, actualiza stats como antes
-          if (!result || !getCachedAddressResult(address)) {
-            const newStats = {
-              ...currentStats,
-              totalProcessed: i + 1,
-              successRate: `${Math.round((successCount / (i + 1)) * 100)}%`,
-            };
-            setStats(newStats);
-          }
-
-          // Add to results immediately for real-time display
-          setResults([...results]);
-
-          // Auto-save progress every SAVE_INTERVAL records
-          if ((i + 1) % SAVE_INTERVAL === 0) {
             saveProgress(
               results,
-              i + 1,
+              i,
               validAddresses.length,
-              file.name,
+              fileName,
+              currentStats,
+              detectedCols,
+              validAddresses
+            );
+            setIsProcessing(false);
+            return;
+          }
+
+          const batch = validAddresses.slice(i, i + BATCH_SIZE);
+          // Procesar el batch concurrentemente
+          const batchResults = await Promise.all(
+            batch.map(async (addressData, idx) => {
+              const address = String(addressData[detectedCols.address!]);
+              setProgress({
+                current: i + idx + 1,
+                total: validAddresses.length,
+                percentage: Math.round(
+                  ((i + idx + 1) / validAddresses.length) * 100
+                ),
+                currentAddress: address,
+              });
+              let result = getCachedAddressResult(address);
+              if (result) {
+                result = { ...result, ...addressData };
+                let mapboxInc = 0,
+                  geocodioInc = 0,
+                  geminiInc = 0;
+                if (result.api_source) {
+                  if (result.api_source.includes("Mapbox")) mapboxInc = 1;
+                  if (result.api_source.includes("Geocodio")) geocodioInc = 1;
+                  if (result.api_source.includes("Gemini")) geminiInc = 1;
+                }
+                setStats((prev) => ({
+                  ...prev,
+                  totalProcessed: i + idx + 1,
+                  successRate: `${Math.round(
+                    (successCount / (i + idx + 1)) * 100
+                  )}%`,
+                  mapboxCount: prev.mapboxCount + mapboxInc,
+                  geocodioCount: prev.geocodioCount + geocodioInc,
+                  geminiCount: prev.geminiCount + geminiInc,
+                }));
+                addLog(
+                  `📄 Using cached result for: ${address}${
+                    result.api_source ? ` | Source: ${result.api_source}` : ""
+                  }`,
+                  "info"
+                );
+              } else {
+                result = await processAddress(addressData, detectedCols);
+                if (result.status === "success") {
+                  cacheAddressResult(address, result);
+                }
+              }
+              if (result.status === "success") {
+                successCount++;
+              }
+              return result;
+            })
+          );
+          results.push(...batchResults);
+          // Actualizar stats después del batch
+          let batchMapbox = 0,
+            batchGeocodio = 0,
+            batchGemini = 0;
+          for (const result of batchResults) {
+            if (result.api_source) {
+              if (result.api_source.includes("Mapbox")) batchMapbox++;
+              if (result.api_source.includes("Geocodio")) batchGeocodio++;
+              if (result.api_source.includes("Gemini")) batchGemini++;
+            }
+          }
+          currentStats = {
+            ...currentStats,
+            mapboxCount: currentStats.mapboxCount + batchMapbox,
+            geocodioCount: currentStats.geocodioCount + batchGeocodio,
+            geminiCount: currentStats.geminiCount + batchGemini,
+            totalProcessed: i + batch.length,
+            successRate: `${Math.round(
+              (successCount / (i + batch.length)) * 100
+            )}%`,
+          };
+          setStats(currentStats);
+          setResults([...results]);
+          // Auto-save progress every SAVE_INTERVAL records
+          if ((i + batch.length) % SAVE_INTERVAL === 0) {
+            saveProgress(
+              results,
+              i + batch.length,
+              validAddresses.length,
+              fileName,
               stats,
               detectedCols,
               validAddresses
             );
             addLog(
-              `💾 Auto-saved at ${i + 1}/${validAddresses.length}`,
+              `💾 Auto-saved at ${i + batch.length}/${validAddresses.length}`,
               "info"
             );
           }
-
-          // Delay between requests
-          if (i < validAddresses.length - 1) {
-            await new Promise((resolve) =>
-              setTimeout(resolve, DELAY_BETWEEN_REQUESTS)
-            );
-          }
         }
-
         if (!shouldStopProcessing.current) {
           addLog(
             `Processing completed: ${results.length} addresses`,
             "success"
           );
-          // Clear progress cache when completed
           clearProgress();
-          // Show success modal
           setShowSuccessModal(true);
         } else {
-          // Save final progress if stopped
           saveProgress(
             results,
             results.length,
             validAddresses.length,
-            file.name,
+            fileName,
             currentStats,
             detectedCols,
             validAddresses
@@ -2069,6 +2045,8 @@ Ejemplo cuando no hay datos:
       cacheAddressResult,
       saveProgress,
       clearProgress,
+      checkAllApiLimits,
+      showApiLimitReachedModal,
     ]
   );
 
@@ -2179,6 +2157,7 @@ Ejemplo cuando no hay datos:
       city: null,
       county: null,
     });
+    setIgnoreLimits(false); // Reset ignore limits flag
     clearProgress(); // Also clear saved progress
     addLog("Results cleared", "info");
   }, [addLog, clearProgress]);
@@ -2186,21 +2165,15 @@ Ejemplo cuando no hay datos:
   // Recovery functions
   const continueFromProgress = useCallback(() => {
     if (recoveryData) {
-      // Immediately close the dialog and clear recovery state to prevent re-showing
-      setShowRecoveryDialog(false);
-
-      // Clear the localStorage immediately to prevent timeouts from re-triggering
-      localStorage.removeItem(STORAGE_KEY);
-
-      // Reset the flag in case user wants to process another file later
-      hasShownRecoveryDialog.current = false;
-
-      console.log(
-        "🔄 Starting recovery process - dialog closed and localStorage cleared"
+      // Llama a processFile con in-memory data
+      processFile(
+        {
+          name: recoveryData.fileName,
+          data: recoveryData.validAddresses,
+          columns: Object.keys(recoveryData.validAddresses[0] || {}),
+        },
+        true
       );
-
-      const dummyFile = new File([], recoveryData.fileName);
-      processFile(dummyFile, true);
     }
   }, [recoveryData, processFile]);
 
@@ -2208,7 +2181,6 @@ Ejemplo cuando no hay datos:
     clearProgress();
     setRecoveryData(null);
     setShowRecoveryDialog(false);
-    hasShownRecoveryDialog.current = false; // Reset flag
     addLog("Previous progress discarded", "info");
   }, [clearProgress, addLog]);
 
@@ -2330,6 +2302,176 @@ Ejemplo cuando no hay datos:
     addLog("File preview opened", "info");
   }, [fileData, addLog]);
 
+  // API Limit Modal functions
+  const downloadApiLimitPartialResults = useCallback(() => {
+    if (!apiLimitData || apiLimitData.currentResults.length === 0) {
+      alert("No partial results to download");
+      return;
+    }
+
+    const headers = [
+      "ML#",
+      "Address",
+      "Zip Code",
+      "City Name",
+      "County",
+      "House Number",
+      "Latitude",
+      "Longitude",
+      "Neighborhoods",
+      "Fuente Neighborhood",
+      "Comunidades",
+      "Fuente Community",
+      "Estado",
+      "Fuente API",
+    ];
+
+    const csvContent = [
+      headers.join(","),
+      ...apiLimitData.currentResults.map((result) =>
+        [
+          `"${
+            result["ML#"] ||
+            result["MLS#"] ||
+            result["MLSNumber"] ||
+            result["MLS Number"] ||
+            result["ListingID"] ||
+            result["Listing ID"] ||
+            ""
+          }"`,
+          `"${
+            result.original_address ||
+            result["Address"] ||
+            result["Internet Display"] ||
+            ""
+          }"`,
+          `"${result["Zip Code"] || ""}"`,
+          `"${result["City Name"] || ""}"`,
+          `"${result["County"] || ""}"`,
+          `"${result["House Number"] || ""}"`,
+          result.latitude || "",
+          result.longitude || "",
+          `"${result.neighborhoods || "N/A"}"`,
+          `"${result.neighborhood_source || "N/A"}"`,
+          `"${result.comunidades || "N/A"}"`,
+          `"${result.community_source || "N/A"}"`,
+          result.status || "",
+          `"${result.api_source || ""}"`,
+        ].join(",")
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `api_limit_partial_results_${apiLimitData.limitReached.toLowerCase()}_${
+      apiLimitData.currentIndex
+    }_${new Date().getTime()}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+
+    addLog(
+      `📥 ${apiLimitData.limitReached} API limit - Partial results downloaded successfully`,
+      "success"
+    );
+
+    // Close modal after download
+    setShowApiLimitModal(false);
+    setApiLimitData(null);
+  }, [apiLimitData, addLog]);
+
+  const continueProcessingIgnoreLimit = useCallback(() => {
+    if (!apiLimitData) return;
+
+    // Cerrar la modal recovery y la de límite API
+    setShowRecoveryDialog(false);
+    setShowApiLimitModal(false);
+
+    // Setear el flag para ignorar límites
+    setIgnoreLimits(true);
+
+    // Validar que haya datos en memoria
+    if (!fileData || !fileData.data || fileData.data.length === 0) {
+      addLog(
+        "❌ No se puede continuar: fileData original no disponible.",
+        "error"
+      );
+      alert(
+        "No se puede continuar porque los datos originales del archivo no están en memoria. Sube el archivo de nuevo o usa la recuperación normal."
+      );
+      setIgnoreLimits(false); // Reset the flag if we can't continue
+      return;
+    }
+
+    setResults(apiLimitData.currentResults);
+    setFileData({
+      ...fileData,
+      fileName: apiLimitData.fileName,
+    });
+
+    // Simular recoveryData para continuar desde el punto de corte
+    const recoveryLikeData = {
+      results: apiLimitData.currentResults,
+      currentIndex: apiLimitData.currentIndex,
+      totalAddresses: apiLimitData.totalAddresses,
+      fileName: apiLimitData.fileName,
+      timestamp: Date.now(),
+      stats: {
+        totalProcessed: apiLimitData.currentResults.length,
+        successRate: `${Math.round(
+          (apiLimitData.currentResults.filter((r) => r.status === "success")
+            .length /
+            apiLimitData.currentResults.length) *
+            100
+        )}%`,
+        mapboxCount: stats.mapboxCount,
+        geocodioCount: stats.geocodioCount,
+        geminiCount: stats.geminiCount,
+      },
+      detectedColumns: detectedColumns,
+      validAddresses: fileData.data,
+    };
+
+    setRecoveryData(recoveryLikeData);
+    setApiLimitData(null);
+    addLog(
+      "🔄 Ignorando límites de API y reanudando desde progreso guardado (solo useEffect)",
+      "info"
+    );
+  }, [
+    apiLimitData,
+    addLog,
+    stats,
+    detectedColumns,
+    fileData,
+    setResults,
+    setFileData,
+    setRecoveryData,
+    setApiLimitData,
+    setShowRecoveryDialog,
+  ]);
+
+  const closeApiLimitModal = useCallback(() => {
+    setShowApiLimitModal(false);
+    setApiLimitData(null);
+    addLog("API limit modal closed", "info");
+  }, [addLog]);
+
+  // Add a reset function to clear the ignore limits flag when processing completes or is reset
+  const resetIgnoreLimits = useCallback(() => {
+    setIgnoreLimits(false);
+    addLog("API limit enforcement restored", "info");
+  }, [addLog]);
+
+  // Reanudar automáticamente si recoveryData cambia y no hay recovery dialog
+  useEffect(() => {
+    if (recoveryData) {
+      setShowRecoveryDialog(false); // Asegura que la modal recovery se cierre
+      continueFromProgress();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recoveryData]);
+
   return {
     stats,
     apiUsage,
@@ -2359,11 +2501,15 @@ Ejemplo cuando no hay datos:
     // Success modal
     showSuccessModal,
     setShowSuccessModal,
-    // API Limit modal
+    // API Limit Modal
     showApiLimitModal,
     setShowApiLimitModal,
-    apiLimitInfo,
+    apiLimitData,
+    downloadApiLimitPartialResults,
+    continueProcessingIgnoreLimit,
     closeApiLimitModal,
-    continueWithOtherApis,
+    // Expose ignore limits state and reset function
+    ignoreLimits,
+    resetIgnoreLimits,
   };
 }
