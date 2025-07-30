@@ -1830,7 +1830,29 @@ Ejemplo cuando no hay datos:
           if (result) {
             // Use cached result
             result = { ...result, ...addressData }; // Merge with original data
-            addLog(`📄 Using cached result for: ${address}`, "info");
+            // Detect api_source and increment corresponding counter
+            let mapboxInc = 0,
+              geocodioInc = 0,
+              geminiInc = 0;
+            if (result.api_source) {
+              if (result.api_source.includes("Mapbox")) mapboxInc = 1;
+              if (result.api_source.includes("Geocodio")) geocodioInc = 1;
+              if (result.api_source.includes("Gemini")) geminiInc = 1;
+            }
+            setStats((prev) => ({
+              ...prev,
+              totalProcessed: i + 1,
+              successRate: `${Math.round((successCount / (i + 1)) * 100)}%`,
+              mapboxCount: prev.mapboxCount + mapboxInc,
+              geocodioCount: prev.geocodioCount + geocodioInc,
+              geminiCount: prev.geminiCount + geminiInc,
+            }));
+            addLog(
+              `📄 Using cached result for: ${address}${
+                result.api_source ? ` | Source: ${result.api_source}` : ""
+              }`,
+              "info"
+            );
           } else {
             // Process address normally
             result = await processAddress(addressData, detectedCols);
@@ -1847,13 +1869,15 @@ Ejemplo cuando no hay datos:
             successCount++;
           }
 
-          // Update stats
-          const newStats = {
-            ...currentStats,
-            totalProcessed: i + 1,
-            successRate: `${Math.round((successCount / (i + 1)) * 100)}%`,
-          };
-          setStats(newStats);
+          // Si el resultado NO es cacheado, actualiza stats como antes
+          if (!result || !getCachedAddressResult(address)) {
+            const newStats = {
+              ...currentStats,
+              totalProcessed: i + 1,
+              successRate: `${Math.round((successCount / (i + 1)) * 100)}%`,
+            };
+            setStats(newStats);
+          }
 
           // Add to results immediately for real-time display
           setResults([...results]);
@@ -1865,7 +1889,7 @@ Ejemplo cuando no hay datos:
               i + 1,
               validAddresses.length,
               file.name,
-              newStats,
+              stats,
               detectedCols,
               validAddresses
             );
