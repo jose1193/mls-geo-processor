@@ -254,6 +254,9 @@ export function useMLSProcessor() {
     fileName: string;
   } | null>(null);
 
+  // Add this state to track when limits should be ignored
+  const [ignoreLimits, setIgnoreLimits] = useState(false);
+
   // Helper function to normalize neighborhood/community values
   const normalizeValue = useCallback(
     (value: string | null | undefined): string => {
@@ -383,6 +386,11 @@ export function useMLSProcessor() {
 
   const checkApiLimit = useCallback(
     (service: "mapbox" | "geocodio" | "gemini"): boolean => {
+      // If limits are being ignored, always return true
+      if (ignoreLimits) {
+        return true;
+      }
+
       switch (service) {
         case "mapbox":
           return apiUsage.mapboxUsed < API_LIMITS.mapbox;
@@ -394,18 +402,23 @@ export function useMLSProcessor() {
           return false;
       }
     },
-    [apiUsage]
+    [apiUsage, ignoreLimits] // Add ignoreLimits to dependencies
   );
 
   const checkAllApiLimits = useCallback(
     (currentStats: Stats): string | null => {
+      // If limits are being ignored, always return null (no limit reached)
+      if (ignoreLimits) {
+        return null;
+      }
+
       // Use the passed currentStats instead of the potentially stale state
       if (currentStats.mapboxCount >= API_LIMITS.mapbox) return "Mapbox";
       if (currentStats.geocodioCount >= API_LIMITS.geocodio) return "Geocodio";
       if (currentStats.geminiCount >= API_LIMITS.gemini) return "Gemini";
       return null;
     },
-    []
+    [ignoreLimits] // Add ignoreLimits to dependencies
   );
 
   const addLog = useCallback(
@@ -431,6 +444,14 @@ export function useMLSProcessor() {
       totalAddresses: number,
       fileName: string
     ) => {
+      // If limits are being ignored, do not show the modal again
+      if (ignoreLimits) {
+        addLog(
+          `API limit (${limitReached}) reached, but ignoring limits as requested. Continuing without showing modal.`,
+          "info"
+        );
+        return;
+      }
       setApiLimitData({
         limitReached,
         currentResults,
@@ -444,7 +465,7 @@ export function useMLSProcessor() {
         "warning"
       );
     },
-    [addLog]
+    [addLog, ignoreLimits]
   );
 
   // Cache and Recovery Functions
@@ -1780,14 +1801,19 @@ Ejemplo cuando no hay datos:
     ]
   );
 
+  // Allow processFile to accept either a File or in-memory data
+  type ProcessFileInput =
+    | File
+    | { name: string; data: MLSData[]; columns: string[] };
   const processFile = useCallback(
-    async (file: File, continueFromProgress = false) => {
+    async (input: ProcessFileInput, continueFromProgress = false) => {
       try {
         let validAddresses: MLSData[];
         let detectedCols: DetectedColumns;
         let startIndex = 0;
         let existingResults: ProcessedResult[] = [];
         let currentStats = stats;
+        let fileName = "";
 
         if (continueFromProgress && recoveryData) {
           // Continue from saved progress
@@ -1801,6 +1827,7 @@ Ejemplo cuando no hay datos:
           startIndex = recoveryData.currentIndex;
           existingResults = recoveryData.results;
           currentStats = recoveryData.stats;
+          fileName = recoveryData.fileName;
 
           // Restore states
           setStats(currentStats);
@@ -1814,38 +1841,42 @@ Ejemplo cuando no hay datos:
 
           // Clear recovery dialog
           setShowRecoveryDialog(false);
-          setRecoveryData(null);
+          // Do NOT clear recoveryData here; let it persist for auto-resume
         } else {
           // Start fresh processing
-          addLog(`Loading file: ${file.name}`, "info");
-          setResults([]);
-
-          // Clear any previous progress
-          clearProgress();
-
-          // Read file
-          const data = await readFile(file);
-
-          if (data.length === 0) {
-            throw new Error("The file is empty");
+          let data: MLSData[];
+          let columns: string[];
+          if (input instanceof File) {
+            addLog(`Loading file: ${input.name}`, "info");
+            setResults([]);
+            clearProgress();
+            data = await readFile(input);
+            fileName = input.name;
+            if (data.length === 0) {
+              throw new Error("The file is empty");
+            }
+            columns = Object.keys(data[0] || {});
+          } else {
+            // In-memory data (from recovery)
+            data = input.data;
+            columns = input.columns;
+            fileName = input.name;
+            setResults([]);
+            clearProgress();
           }
 
-          // Store file data for preview
-          const columns = Object.keys(data[0] || {});
           setFileData({
             data,
             columns,
-            fileName: file.name,
+            fileName,
           });
 
-          // Detect columns
           detectedCols = detectColumns(columns);
 
           if (!detectedCols.address) {
             throw new Error("Could not detect address column");
           }
 
-          // Filter valid addresses
           validAddresses = data.filter(
             (row) =>
               row[detectedCols.address!] &&
@@ -1893,14 +1924,14 @@ Ejemplo cuando no hay datos:
               results,
               i,
               validAddresses.length,
-              file.name
+              fileName
             );
             // Save current progress
             saveProgress(
               results,
               i,
               validAddresses.length,
-              file.name,
+              fileName,
               currentStats,
               detectedCols,
               validAddresses
@@ -2005,7 +2036,7 @@ Ejemplo cuando no hay datos:
               results,
               i + 1,
               validAddresses.length,
-              file.name,
+              fileName,
               stats,
               detectedCols,
               validAddresses
@@ -2039,7 +2070,7 @@ Ejemplo cuando no hay datos:
             results,
             results.length,
             validAddresses.length,
-            file.name,
+            fileName,
             currentStats,
             detectedCols,
             validAddresses
@@ -2050,6 +2081,7 @@ Ejemplo cuando no hay datos:
       } finally {
         setIsProcessing(false);
         shouldStopProcessing.current = false;
+        // Do not reset ignoreLimits here; only reset when clearing results or loading a new file
       }
     },
     [
@@ -2175,6 +2207,7 @@ Ejemplo cuando no hay datos:
       city: null,
       county: null,
     });
+    setIgnoreLimits(false); // Reset ignore limits flag
     clearProgress(); // Also clear saved progress
     addLog("Results cleared", "info");
   }, [addLog, clearProgress]);
@@ -2182,8 +2215,15 @@ Ejemplo cuando no hay datos:
   // Recovery functions
   const continueFromProgress = useCallback(() => {
     if (recoveryData) {
-      const dummyFile = new File([], recoveryData.fileName);
-      processFile(dummyFile, true);
+      // Llama a processFile con in-memory data
+      processFile(
+        {
+          name: recoveryData.fileName,
+          data: recoveryData.validAddresses,
+          columns: Object.keys(recoveryData.validAddresses[0] || {}),
+        },
+        true
+      );
     }
   }, [recoveryData, processFile]);
 
@@ -2398,13 +2438,31 @@ Ejemplo cuando no hay datos:
       "warning"
     );
 
-    // Close modal
+    // Set the ignore limits flag BEFORE closing the modal
+    setIgnoreLimits(true);
+
     setShowApiLimitModal(false);
 
-    // Create a dummy file with the saved data to continue processing
-    const dummyFile = new File([], apiLimitData.fileName);
+    // Restaurar fileData y recoveryData completos para que processFile pueda continuar
+    if (!fileData || !fileData.data || fileData.data.length === 0) {
+      addLog(
+        "❌ No se puede continuar: fileData original no disponible.",
+        "error"
+      );
+      alert(
+        "No se puede continuar porque los datos originales del archivo no están en memoria. Sube el archivo de nuevo o usa la recuperación normal."
+      );
+      setIgnoreLimits(false); // Reset the flag if we can't continue
+      return;
+    }
 
-    // Create recovery-like data from the current API limit data
+    setResults(apiLimitData.currentResults);
+    setFileData({
+      ...fileData,
+      fileName: apiLimitData.fileName,
+    });
+
+    // Simular recoveryData para continuar desde el punto de corte
     const recoveryLikeData = {
       results: apiLimitData.currentResults,
       currentIndex: apiLimitData.currentIndex,
@@ -2424,26 +2482,55 @@ Ejemplo cuando no hay datos:
         geminiCount: stats.geminiCount,
       },
       detectedColumns: detectedColumns,
-      validAddresses: fileData?.data || [],
+      validAddresses: fileData.data,
     };
 
-    // Set the recovery data temporarily
     setRecoveryData(recoveryLikeData);
-
-    // Clear the API limit data
     setApiLimitData(null);
 
-    // Continue processing with ignore limit flag
+    // Continuar procesamiento automáticamente desde el punto de corte
     setTimeout(() => {
-      processFile(dummyFile, true);
+      processFile(
+        {
+          name: recoveryLikeData.fileName,
+          data: recoveryLikeData.validAddresses,
+          columns: Object.keys(recoveryLikeData.validAddresses[0] || {}),
+        },
+        true
+      );
     }, 100);
-  }, [apiLimitData, addLog, stats, detectedColumns, fileData, processFile]);
+  }, [
+    apiLimitData,
+    addLog,
+    stats,
+    detectedColumns,
+    fileData,
+    setResults,
+    setFileData,
+    setRecoveryData,
+    setApiLimitData,
+    processFile,
+  ]);
 
   const closeApiLimitModal = useCallback(() => {
     setShowApiLimitModal(false);
     setApiLimitData(null);
     addLog("API limit modal closed", "info");
   }, [addLog]);
+
+  // Add a reset function to clear the ignore limits flag when processing completes or is reset
+  const resetIgnoreLimits = useCallback(() => {
+    setIgnoreLimits(false);
+    addLog("API limit enforcement restored", "info");
+  }, [addLog]);
+
+  // Reanudar automáticamente si recoveryData cambia y no hay recovery dialog
+  useEffect(() => {
+    if (recoveryData && !showRecoveryDialog) {
+      continueFromProgress();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recoveryData]);
 
   return {
     stats,
@@ -2481,5 +2568,8 @@ Ejemplo cuando no hay datos:
     downloadApiLimitPartialResults,
     continueProcessingIgnoreLimit,
     closeApiLimitModal,
+    // Expose ignore limits state and reset function
+    ignoreLimits,
+    resetIgnoreLimits,
   };
 }
