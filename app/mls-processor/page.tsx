@@ -29,7 +29,6 @@ export default function MLSProcessorPage() {
 
   const {
     stats,
-    apiUsage,
     apiLimits,
     logs,
     isProcessing,
@@ -55,11 +54,12 @@ export default function MLSProcessorPage() {
     // Success modal
     showSuccessModal,
     setShowSuccessModal,
-    // API Limit modal
+    // API Limit Modal
     showApiLimitModal,
-    apiLimitInfo,
+    apiLimitData,
+    downloadApiLimitPartialResults,
+    continueProcessingIgnoreLimit,
     closeApiLimitModal,
-    continueWithOtherApis,
   } = useMLSProcessor();
 
   // Debug recovery state
@@ -127,7 +127,7 @@ export default function MLSProcessorPage() {
         <StatsGrid stats={stats} />
 
         {/* API Status */}
-        <APIStatus apiUsage={apiUsage} apiLimits={apiLimits} />
+        <APIStatus apiLimits={apiLimits} stats={stats} />
 
         {/* Debug Panel - Remove in production */}
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
@@ -261,7 +261,7 @@ export default function MLSProcessorPage() {
                   alert("✅ API usage reset correctly");
                 }
               }}
-              className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded text-sm cursor-pointer"
+              className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded text-sm cursor-pointer hidden"
             >
               🔄 Reset API Usage
             </button>
@@ -504,7 +504,7 @@ export default function MLSProcessorPage() {
 
                 <button
                   onClick={discardProgress}
-                  className="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer"
+                  className="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer hidden"
                 >
                   🗑️ Start Fresh
                 </button>
@@ -586,13 +586,13 @@ export default function MLSProcessorPage() {
         )}
 
         {/* API Limit Modal */}
-        {showApiLimitModal && apiLimitInfo && (
+        {showApiLimitModal && apiLimitData && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-8 max-w-md mx-4 shadow-2xl relative border-l-4 border-red-500">
+            <div className="bg-white rounded-xl p-8 max-w-md mx-4 shadow-2xl relative">
               {/* Close X button */}
               <button
                 onClick={closeApiLimitModal}
-                className="absolute top-3 right-3 bg-red-500 hover:bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center transition-colors cursor-pointer shadow-lg"
+                className="absolute top-3 right-3 bg-gray-500 hover:bg-gray-600 text-white rounded-full w-8 h-8 flex items-center justify-center transition-colors cursor-pointer shadow-lg"
                 title="Close dialog"
               >
                 <svg
@@ -612,54 +612,62 @@ export default function MLSProcessorPage() {
 
               <div className="text-center mb-6">
                 <div className="text-6xl mb-4">🚫</div>
-                <h2 className="text-2xl font-bold text-red-600 mb-2">
+                <h2 className="text-2xl font-bold text-red-800 mb-2">
                   API Limit Reached
                 </h2>
                 <p className="text-gray-600">
-                  The {apiLimitInfo.service} API has reached its daily limit.
+                  The {apiLimitData.limitReached} API has reached its daily
+                  limit. Processing has been paused.
                 </p>
               </div>
 
-              <div className="bg-red-50 rounded-lg p-4 mb-6 border border-red-200">
+              <div className="bg-red-50 rounded-lg p-4 mb-6">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="font-semibold text-gray-700">Service:</span>
+                  <span className="font-semibold text-gray-700">API:</span>
                   <span className="text-red-600 font-bold">
-                    {apiLimitInfo.service}
+                    {apiLimitData.limitReached}
                   </span>
                 </div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="font-semibold text-gray-700">Used:</span>
-                  <span className="text-red-600 font-bold">
-                    {apiLimitInfo.used} / {apiLimitInfo.limit}
+                  <span className="font-semibold text-gray-700">File:</span>
+                  <span className="text-blue-600">{apiLimitData.fileName}</span>
+                </div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-semibold text-gray-700">Progress:</span>
+                  <span className="text-orange-600">
+                    {apiLimitData.currentIndex} / {apiLimitData.totalAddresses}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="font-semibold text-gray-700">Status:</span>
-                  <span className="text-red-600 font-bold">LIMIT EXCEEDED</span>
+                  <span className="font-semibold text-gray-700">
+                    Processed:
+                  </span>
+                  <span className="text-green-600">
+                    {apiLimitData.currentResults.length} addresses
+                  </span>
                 </div>
               </div>
 
               <div className="space-y-3">
                 <button
-                  onClick={downloadResults}
+                  onClick={downloadApiLimitPartialResults}
                   className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer"
-                  disabled={results.length === 0}
                 >
-                  📥 Download Partial Results ({results.length} processed)
+                  📥 Stop & Download Partial Results
                 </button>
 
                 <button
-                  onClick={continueWithOtherApis}
+                  onClick={continueProcessingIgnoreLimit}
                   className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer"
                 >
-                  🔄 Continue with Other APIs
+                  ⚠️ Continue Processing (Ignore Limit)
                 </button>
 
                 <button
                   onClick={closeApiLimitModal}
                   className="w-full bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors cursor-pointer"
                 >
-                  ❌ Close
+                  ❌ Close Modal
                 </button>
               </div>
             </div>
