@@ -1,24 +1,11 @@
-import type { APILimits, Stats } from "../hooks/useMLSProcessor";
+import { APIUsage, APILimits } from "../hooks/useMLSProcessor";
 
 interface APIStatusProps {
+  apiUsage: APIUsage;
   apiLimits: APILimits;
-  stats: Stats;
 }
 
-export function APIStatus({ apiLimits, stats }: APIStatusProps) {
-  // Calcula los valores en tiempo real usando los stats actuales
-  const mapboxUsed = stats.mapboxCount;
-  const geocodioUsed = stats.geocodioCount;
-  const geminiUsed = stats.geminiCount;
-  const mapboxRemaining = apiLimits.mapbox - mapboxUsed;
-  const geocodioRemaining = apiLimits.geocodio - geocodioUsed;
-  const geminiRemaining = apiLimits.gemini - geminiUsed;
-  const mapboxPercentage = Math.round((mapboxUsed / apiLimits.mapbox) * 100);
-  const geocodioPercentage = Math.round(
-    (geocodioUsed / apiLimits.geocodio) * 100
-  );
-  const geminiPercentage = Math.round((geminiUsed / apiLimits.gemini) * 100);
-
+export function APIStatus({ apiUsage, apiLimits }: APIStatusProps) {
   const getStatusColor = (percentage: number) => {
     if (percentage >= 90) return "red";
     if (percentage >= 75) return "yellow";
@@ -40,18 +27,18 @@ export function APIStatus({ apiLimits, stats }: APIStatusProps) {
         {/* Mapbox API */}
         <div
           className={`bg-white rounded-lg p-4 border-2 text-center ${
-            getStatusColor(mapboxPercentage) === "red"
+            getStatusColor(apiUsage.mapboxPercentage) === "red"
               ? "border-red-500"
-              : getStatusColor(mapboxPercentage) === "yellow"
+              : getStatusColor(apiUsage.mapboxPercentage) === "yellow"
               ? "border-yellow-500"
               : "border-blue-500"
           }`}
         >
           <h4
             className={`font-semibold mb-2 ${
-              getStatusColor(mapboxPercentage) === "red"
+              getStatusColor(apiUsage.mapboxPercentage) === "red"
                 ? "text-red-600"
-                : getStatusColor(mapboxPercentage) === "yellow"
+                : getStatusColor(apiUsage.mapboxPercentage) === "yellow"
                 ? "text-yellow-600"
                 : "text-blue-600"
             }`}
@@ -60,43 +47,44 @@ export function APIStatus({ apiLimits, stats }: APIStatusProps) {
           </h4>
           <div
             className={`text-white px-3 py-1 rounded-full text-sm mb-2 ${
-              getStatusColor(mapboxPercentage) === "red"
+              getStatusColor(apiUsage.mapboxPercentage) === "red"
                 ? "bg-red-500"
-                : getStatusColor(mapboxPercentage) === "yellow"
+                : getStatusColor(apiUsage.mapboxPercentage) === "yellow"
                 ? "bg-yellow-500"
                 : "bg-blue-500"
             }`}
           >
-            {getStatusText(mapboxPercentage)}
+            {getStatusText(apiUsage.mapboxPercentage)}
           </div>
           <div className="text-sm text-gray-600 mb-2">
             <div
               className={`font-semibold text-lg ${
-                getStatusColor(mapboxPercentage) === "red"
+                getStatusColor(apiUsage.mapboxPercentage) === "red"
                   ? "text-red-600"
-                  : getStatusColor(mapboxPercentage) === "yellow"
+                  : getStatusColor(apiUsage.mapboxPercentage) === "yellow"
                   ? "text-yellow-600"
                   : "text-blue-600"
               }`}
             >
-              {mapboxRemaining.toLocaleString()}
+              {apiUsage.mapboxRemaining.toLocaleString()}
             </div>
             <div>remaining</div>
             <div className="text-xs">
-              {mapboxUsed.toLocaleString()} /{" "}
-              {apiLimits.mapbox.toLocaleString()} used ({mapboxPercentage}%)
+              {apiUsage.mapboxUsed.toLocaleString()} /{" "}
+              {apiLimits.mapbox.toLocaleString()} used (
+              {apiUsage.mapboxPercentage}%)
             </div>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
               className={`h-2 rounded-full ${
-                getStatusColor(mapboxPercentage) === "red"
+                getStatusColor(apiUsage.mapboxPercentage) === "red"
                   ? "bg-red-500"
-                  : getStatusColor(mapboxPercentage) === "yellow"
+                  : getStatusColor(apiUsage.mapboxPercentage) === "yellow"
                   ? "bg-yellow-500"
                   : "bg-blue-500"
               }`}
-              style={{ width: `${Math.min(mapboxPercentage, 100)}%` }}
+              style={{ width: `${Math.min(apiUsage.mapboxPercentage, 100)}%` }}
             ></div>
           </div>
           <p className="text-gray-600 text-xs mt-2">Primary Geocoding</p>
@@ -105,18 +93,18 @@ export function APIStatus({ apiLimits, stats }: APIStatusProps) {
         {/* Geocodio API */}
         <div
           className={`bg-white rounded-lg p-4 border-2 text-center ${
-            getStatusColor(geocodioPercentage) === "red"
+            getStatusColor(apiUsage.geocodioPercentage) === "red"
               ? "border-red-500"
-              : getStatusColor(geocodioPercentage) === "yellow"
+              : getStatusColor(apiUsage.geocodioPercentage) === "yellow"
               ? "border-yellow-500"
               : "border-green-500"
           }`}
         >
           <h4
             className={`font-semibold mb-2 ${
-              getStatusColor(geocodioPercentage) === "red"
+              getStatusColor(apiUsage.geocodioPercentage) === "red"
                 ? "text-red-600"
-                : getStatusColor(geocodioPercentage) === "yellow"
+                : getStatusColor(apiUsage.geocodioPercentage) === "yellow"
                 ? "text-yellow-600"
                 : "text-green-600"
             }`}
@@ -125,43 +113,46 @@ export function APIStatus({ apiLimits, stats }: APIStatusProps) {
           </h4>
           <div
             className={`text-white px-3 py-1 rounded-full text-sm mb-2 ${
-              getStatusColor(geocodioPercentage) === "red"
+              getStatusColor(apiUsage.geocodioPercentage) === "red"
                 ? "bg-red-500"
-                : getStatusColor(geocodioPercentage) === "yellow"
+                : getStatusColor(apiUsage.geocodioPercentage) === "yellow"
                 ? "bg-yellow-500"
                 : "bg-green-500"
             }`}
           >
-            {getStatusText(geocodioPercentage)}
+            {getStatusText(apiUsage.geocodioPercentage)}
           </div>
           <div className="text-sm text-gray-600 mb-2">
             <div
               className={`font-semibold text-lg ${
-                getStatusColor(geocodioPercentage) === "red"
+                getStatusColor(apiUsage.geocodioPercentage) === "red"
                   ? "text-red-600"
-                  : getStatusColor(geocodioPercentage) === "yellow"
+                  : getStatusColor(apiUsage.geocodioPercentage) === "yellow"
                   ? "text-yellow-600"
                   : "text-green-600"
               }`}
             >
-              {geocodioRemaining.toLocaleString()}
+              {apiUsage.geocodioRemaining.toLocaleString()}
             </div>
             <div>remaining</div>
             <div className="text-xs">
-              {geocodioUsed.toLocaleString()} /{" "}
-              {apiLimits.geocodio.toLocaleString()} used ({geocodioPercentage}%)
+              {apiUsage.geocodioUsed.toLocaleString()} /{" "}
+              {apiLimits.geocodio.toLocaleString()} used (
+              {apiUsage.geocodioPercentage}%)
             </div>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
               className={`h-2 rounded-full ${
-                getStatusColor(geocodioPercentage) === "red"
+                getStatusColor(apiUsage.geocodioPercentage) === "red"
                   ? "bg-red-500"
-                  : getStatusColor(geocodioPercentage) === "yellow"
+                  : getStatusColor(apiUsage.geocodioPercentage) === "yellow"
                   ? "bg-yellow-500"
                   : "bg-green-500"
               }`}
-              style={{ width: `${Math.min(geocodioPercentage, 100)}%` }}
+              style={{
+                width: `${Math.min(apiUsage.geocodioPercentage, 100)}%`,
+              }}
             ></div>
           </div>
           <p className="text-gray-600 text-xs mt-2">Backup Geocoding</p>
@@ -170,18 +161,18 @@ export function APIStatus({ apiLimits, stats }: APIStatusProps) {
         {/* Gemini API */}
         <div
           className={`bg-white rounded-lg p-4 border-2 text-center ${
-            getStatusColor(geminiPercentage) === "red"
+            getStatusColor(apiUsage.geminiPercentage) === "red"
               ? "border-red-500"
-              : getStatusColor(geminiPercentage) === "yellow"
+              : getStatusColor(apiUsage.geminiPercentage) === "yellow"
               ? "border-yellow-500"
               : "border-purple-500"
           }`}
         >
           <h4
             className={`font-semibold mb-2 ${
-              getStatusColor(geminiPercentage) === "red"
+              getStatusColor(apiUsage.geminiPercentage) === "red"
                 ? "text-red-600"
-                : getStatusColor(geminiPercentage) === "yellow"
+                : getStatusColor(apiUsage.geminiPercentage) === "yellow"
                 ? "text-yellow-600"
                 : "text-purple-600"
             }`}
@@ -190,43 +181,44 @@ export function APIStatus({ apiLimits, stats }: APIStatusProps) {
           </h4>
           <div
             className={`text-white px-3 py-1 rounded-full text-sm mb-2 ${
-              getStatusColor(geminiPercentage) === "red"
+              getStatusColor(apiUsage.geminiPercentage) === "red"
                 ? "bg-red-500"
-                : getStatusColor(geminiPercentage) === "yellow"
+                : getStatusColor(apiUsage.geminiPercentage) === "yellow"
                 ? "bg-yellow-500"
                 : "bg-purple-500"
             }`}
           >
-            {getStatusText(geminiPercentage)}
+            {getStatusText(apiUsage.geminiPercentage)}
           </div>
           <div className="text-sm text-gray-600 mb-2">
             <div
               className={`font-semibold text-lg ${
-                getStatusColor(geminiPercentage) === "red"
+                getStatusColor(apiUsage.geminiPercentage) === "red"
                   ? "text-red-600"
-                  : getStatusColor(geminiPercentage) === "yellow"
+                  : getStatusColor(apiUsage.geminiPercentage) === "yellow"
                   ? "text-yellow-600"
                   : "text-purple-600"
               }`}
             >
-              {geminiRemaining.toLocaleString()}
+              {apiUsage.geminiRemaining.toLocaleString()}
             </div>
             <div>remaining</div>
             <div className="text-xs">
-              {geminiUsed.toLocaleString()} /{" "}
-              {apiLimits.gemini.toLocaleString()} used ({geminiPercentage}%)
+              {apiUsage.geminiUsed.toLocaleString()} /{" "}
+              {apiLimits.gemini.toLocaleString()} used (
+              {apiUsage.geminiPercentage}%)
             </div>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
               className={`h-2 rounded-full ${
-                getStatusColor(geminiPercentage) === "red"
+                getStatusColor(apiUsage.geminiPercentage) === "red"
                   ? "bg-red-500"
-                  : getStatusColor(geminiPercentage) === "yellow"
+                  : getStatusColor(apiUsage.geminiPercentage) === "yellow"
                   ? "bg-yellow-500"
                   : "bg-purple-500"
               }`}
-              style={{ width: `${Math.min(geminiPercentage, 100)}%` }}
+              style={{ width: `${Math.min(apiUsage.geminiPercentage, 100)}%` }}
             ></div>
           </div>
           <p className="text-gray-600 text-xs mt-2">Smart Enrichment</p>
@@ -251,7 +243,7 @@ export function APIStatus({ apiLimits, stats }: APIStatusProps) {
             <span className="font-medium">3. Geocodio Fallback</span> → Only if
             Mapbox completely fails
           </div>
-          <div className="mt-2 p-2 bg-yellow-50 rounded border-l-2 border-yellow-400 hidden">
+          <div className="mt-2 p-2 bg-yellow-50 rounded border-l-2 border-yellow-400">
             <span className="font-medium text-yellow-700">⚠️ Auto-Stop:</span>{" "}
             Processing stops when any API limit is reached
           </div>
