@@ -161,9 +161,9 @@ const GEMINI_DELAY = isDevelopment ? 1000 : 3000; // Shorter delay in dev, longe
 
 // API Limits Configuration - Configurable limits for each service
 const API_LIMITS: APILimits = {
-  mapbox: 5, // Mapbox free tier limit
+  mapbox: 50000, // Mapbox free tier limit
   geocodio: 50000, // Geocodio premium tier limit
-  gemini: 5, // Gemini premium - 100k requests
+  gemini: 50000, // Gemini premium - 100k requests
 };
 
 // Storage keys
