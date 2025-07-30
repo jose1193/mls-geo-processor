@@ -161,9 +161,9 @@ const GEMINI_DELAY = isDevelopment ? 1000 : 3000; // Shorter delay in dev, longe
 
 // API Limits Configuration - Configurable limits for each service
 const API_LIMITS: APILimits = {
-  mapbox: 50000, // Mapbox free tier limit
+  mapbox: 5, // Mapbox free tier limit
   geocodio: 50000, // Geocodio premium tier limit
-  gemini: 50000, // Gemini premium - 100k requests
+  gemini: 5, // Gemini premium - 100k requests
 };
 
 // Storage keys
@@ -191,6 +191,8 @@ export function useMLSProcessor() {
   const shouldStopProcessing = useRef(false);
   // Flag to prevent multiple recovery dialogs
   const hasShownRecoveryDialog = useRef(false);
+  // Flag to prevent duplicate API usage updates
+  const lastApiUsageUpdate = useRef<{ [key: string]: number }>({});
 
   const [stats, setStats] = useState<Stats>({
     totalProcessed: 0,
@@ -324,8 +326,22 @@ export function useMLSProcessor() {
 
   const updateApiUsage = useCallback(
     (service: "mapbox" | "geocodio" | "gemini", increment = 1) => {
+      // Prevent duplicate updates within 100ms
+      const now = Date.now();
+      const lastUpdate = lastApiUsageUpdate.current[service] || 0;
+      if (now - lastUpdate < 100) {
+        console.log(`🚫 Preventing duplicate API usage update for ${service}`);
+        return;
+      }
+      lastApiUsageUpdate.current[service] = now;
+
       setApiUsage((prev) => {
         const newUsage = { ...prev };
+
+        console.log(`📊 Updating API Usage for ${service}:`, {
+          before: prev,
+          increment,
+        });
 
         switch (service) {
           case "mapbox":
@@ -360,6 +376,16 @@ export function useMLSProcessor() {
             break;
         }
 
+        console.log(`📊 API Usage updated for ${service}:`, {
+          after: newUsage,
+          shouldTriggerLimit:
+            service === "mapbox"
+              ? newUsage.mapboxUsed >= API_LIMITS.mapbox
+              : service === "geocodio"
+              ? newUsage.geocodioUsed >= API_LIMITS.geocodio
+              : newUsage.geminiUsed >= API_LIMITS.gemini,
+        });
+
         // Save to localStorage
         saveApiUsage(newUsage);
         return newUsage;
@@ -370,16 +396,37 @@ export function useMLSProcessor() {
 
   const checkApiLimit = useCallback(
     (service: "mapbox" | "geocodio" | "gemini"): boolean => {
-      switch (service) {
-        case "mapbox":
-          return apiUsage.mapboxUsed < API_LIMITS.mapbox;
-        case "geocodio":
-          return apiUsage.geocodioUsed < API_LIMITS.geocodio;
-        case "gemini":
-          return apiUsage.geminiUsed < API_LIMITS.gemini;
-        default:
-          return false;
-      }
+      const isWithinLimit = (() => {
+        switch (service) {
+          case "mapbox":
+            return apiUsage.mapboxUsed < API_LIMITS.mapbox;
+          case "geocodio":
+            return apiUsage.geocodioUsed < API_LIMITS.geocodio;
+          case "gemini":
+            return apiUsage.geminiUsed < API_LIMITS.gemini;
+          default:
+            return false;
+        }
+      })();
+
+      // Debug logging
+      console.log(`🔍 API Limit Check for ${service}:`, {
+        used:
+          service === "mapbox"
+            ? apiUsage.mapboxUsed
+            : service === "geocodio"
+            ? apiUsage.geocodioUsed
+            : apiUsage.geminiUsed,
+        limit:
+          service === "mapbox"
+            ? API_LIMITS.mapbox
+            : service === "geocodio"
+            ? API_LIMITS.geocodio
+            : API_LIMITS.gemini,
+        withinLimit: isWithinLimit,
+      });
+
+      return isWithinLimit;
     },
     [apiUsage]
   );
@@ -401,6 +448,11 @@ export function useMLSProcessor() {
 
   const handleApiLimitReached = useCallback(
     (service: "mapbox" | "geocodio" | "gemini") => {
+      console.log(`🚫 API Limit Reached Handler Called for ${service}:`, {
+        currentUsage: apiUsage,
+        limits: API_LIMITS,
+      });
+
       const serviceInfo = {
         mapbox: { used: apiUsage.mapboxUsed, limit: API_LIMITS.mapbox },
         geocodio: { used: apiUsage.geocodioUsed, limit: API_LIMITS.geocodio },
@@ -413,6 +465,7 @@ export function useMLSProcessor() {
         limit: serviceInfo[service].limit,
       });
 
+      console.log(`🚫 Setting API Limit Modal to true for ${service}`);
       setShowApiLimitModal(true);
 
       // Stop processing immediately
@@ -726,8 +779,8 @@ export function useMLSProcessor() {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(CACHE_KEY);
     localStorage.removeItem(GEMINI_CACHE_KEY);
-    localStorage.removeItem(API_USAGE_KEY); // Clear API usage tracking too
-    console.log("🗑️ Progress cache and API usage cleared");
+    // DON'T clear API usage - it should persist for the day
+    console.log("🗑️ Progress cache cleared (API usage preserved)");
   }, []);
 
   const resetApiUsage = useCallback(() => {
@@ -977,15 +1030,15 @@ export function useMLSProcessor() {
           mapboxCount: prev.mapboxCount + 1,
         }));
 
-        // Update API usage tracking
-        updateApiUsage("mapbox");
-
         const response = await fetch(url);
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
         const data = await response.json();
+
+        // Update API usage tracking AFTER successful response
+        updateApiUsage("mapbox");
 
         if (data.features && data.features.length > 0) {
           const feature = data.features[0];
@@ -1104,15 +1157,15 @@ export function useMLSProcessor() {
           geocodioCount: prev.geocodioCount + 1,
         }));
 
-        // Update API usage tracking
-        updateApiUsage("geocodio");
-
         const response = await fetch(url);
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
         const data = await response.json();
+
+        // Update API usage tracking AFTER successful response
+        updateApiUsage("geocodio");
 
         if (data.results && data.results.length > 0) {
           const result = data.results[0];
@@ -1256,9 +1309,6 @@ Ejemplo cuando no hay datos:
             "info"
           );
           setStats((prev) => ({ ...prev, geminiCount: prev.geminiCount + 1 }));
-
-          // Update API usage tracking
-          updateApiUsage("gemini");
 
           const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
@@ -1457,6 +1507,9 @@ Ejemplo cuando no hay datos:
                 console.log("✅ Gemini Parsed Result:", result);
                 addLog(`✅ Gemini success on attempt ${attempt}`, "success");
 
+                // Update API usage tracking AFTER successful response
+                updateApiUsage("gemini");
+
                 // Cache successful result
                 cacheGeminiResult(address, city, county, result);
                 return result;
@@ -1519,6 +1572,9 @@ Ejemplo cuando no hay datos:
                     community: community,
                   };
                   addLog(`✅ Gemini success on attempt ${attempt}`, "success");
+
+                  // Update API usage tracking AFTER successful response
+                  updateApiUsage("gemini");
 
                   // Cache successful result
                   cacheGeminiResult(address, city, county, result);
