@@ -189,6 +189,8 @@ export function useMLSProcessor() {
   const logIdCounter = useRef(0);
   // Control flag to stop processing
   const shouldStopProcessing = useRef(false);
+  // Flag to prevent multiple recovery dialogs
+  const hasShownRecoveryDialog = useRef(false);
 
   const [stats, setStats] = useState<Stats>({
     totalProcessed: 0,
@@ -454,6 +456,12 @@ export function useMLSProcessor() {
     const checkRecovery = () => {
       console.log("🔍 Starting recovery check...");
 
+      // Prevent showing dialog if it's already been shown
+      if (hasShownRecoveryDialog.current) {
+        console.log("⏸️ Recovery check skipped - dialog already shown");
+        return;
+      }
+
       try {
         // Check if localStorage is available
         if (typeof window === "undefined" || !window.localStorage) {
@@ -520,6 +528,9 @@ export function useMLSProcessor() {
 
           console.log("✅ Valid recovery data found, setting states...");
 
+          // Mark that we've shown the recovery dialog
+          hasShownRecoveryDialog.current = true;
+
           // Set recovery data first
           setRecoveryData(data);
 
@@ -574,7 +585,7 @@ export function useMLSProcessor() {
       clearTimeout(timeoutId3);
       clearTimeout(timeoutId4);
     };
-  }, []); // Empty dependency array to run only once on mount
+  }, []); // Empty dependency array to run only once on mount - checkRecovery closure captures current state
 
   // Initialize API usage tracking
   useEffect(() => {
@@ -2063,6 +2074,19 @@ Ejemplo cuando no hay datos:
   // Recovery functions
   const continueFromProgress = useCallback(() => {
     if (recoveryData) {
+      // Immediately close the dialog and clear recovery state to prevent re-showing
+      setShowRecoveryDialog(false);
+
+      // Clear the localStorage immediately to prevent timeouts from re-triggering
+      localStorage.removeItem(STORAGE_KEY);
+
+      // Reset the flag in case user wants to process another file later
+      hasShownRecoveryDialog.current = false;
+
+      console.log(
+        "🔄 Starting recovery process - dialog closed and localStorage cleared"
+      );
+
       const dummyFile = new File([], recoveryData.fileName);
       processFile(dummyFile, true);
     }
@@ -2072,6 +2096,7 @@ Ejemplo cuando no hay datos:
     clearProgress();
     setRecoveryData(null);
     setShowRecoveryDialog(false);
+    hasShownRecoveryDialog.current = false; // Reset flag
     addLog("Previous progress discarded", "info");
   }, [clearProgress, addLog]);
 
