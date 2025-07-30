@@ -161,9 +161,9 @@ const GEMINI_DELAY = isDevelopment ? 1000 : 3000; // Shorter delay in dev, longe
 
 // API Limits Configuration - Configurable limits for each service
 const API_LIMITS: APILimits = {
-  mapbox: 50000, // Mapbox free tier limit
+  mapbox: 5, // Mapbox free tier limit
   geocodio: 50000, // Geocodio premium tier limit
-  gemini: 100000, // Gemini premium - 100k requests
+  gemini: 5, // Gemini premium - 100k requests
 };
 
 // Storage keys
@@ -234,6 +234,12 @@ export function useMLSProcessor() {
   );
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showApiLimitModal, setShowApiLimitModal] = useState(false);
+  const [apiLimitInfo, setApiLimitInfo] = useState<{
+    service: string;
+    used: number;
+    limit: number;
+  } | null>(null);
 
   // Helper function to normalize neighborhood/community values
   const normalizeValue = useCallback(
@@ -392,6 +398,52 @@ export function useMLSProcessor() {
     },
     []
   );
+
+  const handleApiLimitReached = useCallback(
+    (service: "mapbox" | "geocodio" | "gemini") => {
+      const serviceInfo = {
+        mapbox: { used: apiUsage.mapboxUsed, limit: API_LIMITS.mapbox },
+        geocodio: { used: apiUsage.geocodioUsed, limit: API_LIMITS.geocodio },
+        gemini: { used: apiUsage.geminiUsed, limit: API_LIMITS.gemini },
+      };
+
+      setApiLimitInfo({
+        service: service.charAt(0).toUpperCase() + service.slice(1),
+        used: serviceInfo[service].used,
+        limit: serviceInfo[service].limit,
+      });
+
+      setShowApiLimitModal(true);
+
+      // Stop processing immediately
+      shouldStopProcessing.current = true;
+      setIsProcessing(false);
+
+      addLog(
+        `🚫 ${service.toUpperCase()} API limit reached (${
+          serviceInfo[service].used
+        }/${serviceInfo[service].limit}). Processing stopped.`,
+        "error"
+      );
+    },
+    [apiUsage, addLog]
+  );
+
+  const closeApiLimitModal = useCallback(() => {
+    setShowApiLimitModal(false);
+    setApiLimitInfo(null);
+  }, []);
+
+  const continueWithOtherApis = useCallback(() => {
+    setShowApiLimitModal(false);
+    setApiLimitInfo(null);
+
+    // Allow processing to continue (remove the stop flag)
+    shouldStopProcessing.current = false;
+    setIsProcessing(true);
+
+    addLog("🔄 Continuing processing with remaining APIs...", "info");
+  }, [addLog]);
 
   // Cache and Recovery Functions
   const saveProgress = useCallback(
@@ -909,10 +961,7 @@ export function useMLSProcessor() {
 
       // Check API limit before making request
       if (!checkApiLimit("mapbox")) {
-        addLog(
-          `🚫 Mapbox API limit reached (${apiUsage.mapboxUsed}/${API_LIMITS.mapbox}). Skipping request for: ${address}`,
-          "warning"
-        );
+        handleApiLimitReached("mapbox");
         return {
           success: false as const,
           error: `Mapbox API limit reached (${apiUsage.mapboxUsed}/${API_LIMITS.mapbox})`,
@@ -1017,7 +1066,13 @@ export function useMLSProcessor() {
         return { success: false as const, error: (error as Error).message };
       }
     },
-    [addLog, checkApiLimit, updateApiUsage, apiUsage.mapboxUsed]
+    [
+      addLog,
+      checkApiLimit,
+      updateApiUsage,
+      handleApiLimitReached,
+      apiUsage.mapboxUsed,
+    ]
   );
 
   // Geocode with Geocodio as backup
@@ -1035,10 +1090,7 @@ export function useMLSProcessor() {
 
       // Check API limit before making request
       if (!checkApiLimit("geocodio")) {
-        addLog(
-          `🚫 Geocodio API limit reached (${apiUsage.geocodioUsed}/${API_LIMITS.geocodio}). Skipping request for: ${address}`,
-          "warning"
-        );
+        handleApiLimitReached("geocodio");
         return {
           success: false as const,
           error: `Geocodio API limit reached (${apiUsage.geocodioUsed}/${API_LIMITS.geocodio})`,
@@ -1105,7 +1157,13 @@ export function useMLSProcessor() {
         return { success: false as const, error: (error as Error).message };
       }
     },
-    [addLog, checkApiLimit, updateApiUsage, apiUsage.geocodioUsed]
+    [
+      addLog,
+      checkApiLimit,
+      updateApiUsage,
+      handleApiLimitReached,
+      apiUsage.geocodioUsed,
+    ]
   );
 
   // Get neighborhood from Gemini with optimized prompt and retry logic
@@ -1180,10 +1238,7 @@ Ejemplo cuando no hay datos:
 
       // Check API limit before making request
       if (!checkApiLimit("gemini")) {
-        addLog(
-          `🚫 Gemini API limit reached (${apiUsage.geminiUsed}/${API_LIMITS.gemini}). Skipping request for: ${fullAddress}`,
-          "warning"
-        );
+        handleApiLimitReached("gemini");
         return {
           success: false as const,
           error: `Gemini API limit reached (${apiUsage.geminiUsed}/${API_LIMITS.gemini})`,
@@ -1523,6 +1578,7 @@ Ejemplo cuando no hay datos:
       cacheGeminiResult,
       checkApiLimit,
       updateApiUsage,
+      handleApiLimitReached,
       apiUsage.geminiUsed,
     ]
   );
@@ -2247,5 +2303,11 @@ Ejemplo cuando no hay datos:
     // Success modal
     showSuccessModal,
     setShowSuccessModal,
+    // API Limit modal
+    showApiLimitModal,
+    setShowApiLimitModal,
+    apiLimitInfo,
+    closeApiLimitModal,
+    continueWithOtherApis,
   };
 }
