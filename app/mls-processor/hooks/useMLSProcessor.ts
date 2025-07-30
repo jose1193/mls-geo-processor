@@ -1608,101 +1608,162 @@ Ejemplo cuando no hay datos:
         ? (addressData[columns.county] as string)
         : "";
 
-      const result: ProcessedResult = {
-        ...addressData,
-        original_address: address,
-        status: "success",
-        processed_at: new Date().toISOString(),
-      };
-
       try {
-        // 1. Mapbox
+        let result: ProcessedResult = {
+          ...addressData,
+          original_address: address,
+          status: "success",
+          api_source: "Mapbox + Gemini",
+          processed_at: new Date().toISOString(),
+        };
+
+        // Step 1: Try Mapbox first (Primary for geocoding)
+        addLog(`🔄 Step 1: Trying Mapbox for: ${address}`, "info");
         const mapboxResult = await geocodeWithMapbox(
           address,
           zip,
           city,
           county
         );
-        let normalizedMapboxNeighborhood = "N/A";
-        if (
-          mapboxResult.success &&
-          typeof mapboxResult.neighborhood === "string"
-        ) {
-          normalizedMapboxNeighborhood = normalizeValue(
-            mapboxResult.neighborhood
-          );
-        }
 
-        if (mapboxResult.success && normalizedMapboxNeighborhood !== "N/A") {
-          // Mapbox neighborhood válido
-          result.neighborhoods = normalizedMapboxNeighborhood || "N/A";
-          result.neighborhood_source = "Mapbox";
-          result.api_source = "Mapbox Only";
+        if (mapboxResult.success) {
+          result = {
+            ...result,
+            formatted_address: mapboxResult.formatted,
+            latitude: mapboxResult.latitude,
+            longitude: mapboxResult.longitude,
+            neighbourhood: mapboxResult.neighborhood || undefined,
+            "House Number": mapboxResult["House Number"],
+          };
 
-          // Gemini solo para comunidad
-          const geminiResult = await getNeighborhoodFromGemini(
-            address,
-            city,
-            county
-          );
-          if (geminiResult.success) {
-            result.comunidades =
-              normalizeValue(geminiResult.community) || "N/A";
+          addLog(`✅ Mapbox success for: ${address}`, "success");
+
+          // Check if Mapbox provided neighborhood data
+          const hasMapboxNeighborhood =
+            mapboxResult.neighborhood &&
+            normalizeValue(mapboxResult.neighborhood) !== "N/A";
+
+          if (hasMapboxNeighborhood) {
+            // Mapbox has neighborhood, use it directly
+            result.neighborhoods = normalizeValue(mapboxResult.neighborhood);
+            result.neighborhood_source = "Mapbox";
+            result.api_source = "Mapbox Only";
+
+            // Still try Gemini for community data (communities are usually not in Mapbox)
+            addLog(
+              `🔄 Mapbox has neighborhood, using Gemini only for community data`,
+              "info"
+            );
+
+            const geminiResult = await getNeighborhoodFromGemini(
+              address,
+              city,
+              county
+            );
+
+            if (geminiResult.success && "community" in geminiResult) {
+              result.comunidades = normalizeValue(geminiResult.community);
+              result.community_source =
+                normalizeValue(geminiResult.community) !== "N/A"
+                  ? "Gemini AI"
+                  : "N/A";
+              result.api_source = "Mapbox + Gemini";
+            } else {
+              result.comunidades = "N/A";
+              result.community_source = "N/A";
+            }
+
+            addLog(
+              `✅ Mapbox complete: N=${result.neighborhoods} (${result.neighborhood_source}), C=${result.comunidades} (${result.community_source})`,
+              "success"
+            );
           } else {
-            result.comunidades = "N/A";
+            // Mapbox didn't provide neighborhood, use Gemini to complete both
+            addLog(
+              `🔄 Mapbox missing neighborhood, using Gemini to complete data`,
+              "info"
+            );
+
+            const geminiResult = await getNeighborhoodFromGemini(
+              address,
+              city,
+              county
+            );
+
+            if (geminiResult.success && "neighborhood" in geminiResult) {
+              result.neighborhoods = normalizeValue(geminiResult.neighborhood);
+              result.comunidades = normalizeValue(geminiResult.community);
+
+              result.neighborhood_source =
+                normalizeValue(geminiResult.neighborhood) !== "N/A"
+                  ? "Gemini AI"
+                  : "N/A";
+              result.community_source =
+                normalizeValue(geminiResult.community) !== "N/A"
+                  ? "Gemini AI"
+                  : "N/A";
+              result.api_source = "Mapbox + Gemini";
+
+              addLog(
+                `✅ Mapbox + Gemini complete: N=${result.neighborhoods} (${result.neighborhood_source}), C=${result.comunidades} (${result.community_source})`,
+                "success"
+              );
+            } else {
+              // Gemini also failed, use only Mapbox geocoding data
+              result.neighborhoods = "N/A";
+              result.comunidades = "N/A";
+              result.neighborhood_source = "N/A";
+              result.community_source = "N/A";
+              result.api_source = "Mapbox Only";
+
+              const errorMsg =
+                "error" in geminiResult
+                  ? geminiResult.error
+                  : "No valid data returned";
+              addLog(
+                `⚠️ Gemini failed, using only Mapbox geocoding: ${errorMsg}`,
+                "warning"
+              );
+            }
           }
-          result.community_source =
-            result.comunidades !== "N/A" ? "Gemini AI" : "N/A";
-          if (result.comunidades !== "N/A")
-            result.api_source = "Mapbox + Gemini";
-        } else if (mapboxResult.success) {
-          // Mapbox neighborhood es N/A o vacío, Gemini para ambos
-          const geminiResult = await getNeighborhoodFromGemini(
-            address,
-            city,
-            county
-          );
-          if (geminiResult.success) {
-            result.neighborhoods =
-              normalizeValue(geminiResult.neighborhood) || "N/A";
-            result.comunidades =
-              normalizeValue(geminiResult.community) || "N/A";
-          } else {
-            result.neighborhoods = "N/A";
-            result.comunidades = "N/A";
-          }
-          result.neighborhood_source =
-            result.neighborhoods !== "N/A" ? "Gemini AI" : "N/A";
-          result.community_source =
-            result.comunidades !== "N/A" ? "Gemini AI" : "N/A";
-          result.api_source =
-            result.neighborhoods !== "N/A" || result.comunidades !== "N/A"
-              ? "Gemini Only"
-              : "Mapbox Only";
+
+          // Add delay between requests - environment aware
+          const mapboxDelay = isDevelopment ? 500 : 2000;
+          await new Promise((resolve) => setTimeout(resolve, mapboxDelay));
         } else {
-          // Mapbox falló, Geocodio fallback
+          // Mapbox failed, use Geocodio as fallback
+          addLog(`❌ Mapbox failed: ${mapboxResult.error}`, "error");
+          addLog(`🔄 Fallback: Trying Geocodio`, "info");
+
           const geocodeResult = await geocodeWithGeocodio(
             address,
             zip,
             city,
             county
           );
+
           if (geocodeResult.success) {
-            result.formatted_address = geocodeResult.formatted;
-            result.latitude = geocodeResult.latitude;
-            result.longitude = geocodeResult.longitude;
-            result.neighbourhood = geocodeResult.neighbourhood || undefined;
-            result["House Number"] = geocodeResult["House Number"];
-            result.neighborhoods =
-              normalizeValue(geocodeResult.neighbourhood) || "N/A";
-            result.neighborhood_source = geocodeResult.neighbourhood
-              ? "Geocodio"
-              : "N/A";
-            result.comunidades = "N/A";
-            result.community_source = "N/A";
-            result.api_source = "Geocodio (Fallback)";
+            result = {
+              ...result,
+              formatted_address: geocodeResult.formatted,
+              latitude: geocodeResult.latitude,
+              longitude: geocodeResult.longitude,
+              neighbourhood: geocodeResult.neighbourhood || undefined,
+              "House Number": geocodeResult["House Number"],
+              neighborhoods: normalizeValue(geocodeResult.neighbourhood),
+              neighborhood_source: geocodeResult.neighbourhood
+                ? "Geocodio"
+                : "N/A",
+              comunidades: "N/A", // Geocodio doesn't provide community data
+              community_source: "N/A",
+              api_source: "Geocodio (Fallback)",
+            };
+
+            addLog(`✅ Geocodio fallback success for: ${address}`, "success");
+
+            await new Promise((resolve) => setTimeout(resolve, GEMINI_DELAY));
           } else {
-            // Todo falló
+            // All geocoding services failed
             result.status = "error";
             result.error = `All APIs failed - Mapbox: ${mapboxResult.error}, Geocodio: ${geocodeResult.error}`;
             result.api_source = "Failed";
@@ -1710,26 +1771,10 @@ Ejemplo cuando no hay datos:
             result.comunidades = "N/A";
             result.neighborhood_source = "N/A";
             result.community_source = "N/A";
+
+            addLog(`❌ All geocoding failed for: ${address}`, "error");
           }
         }
-
-        // Forzar N/A si algún campo queda vacío, null o undefined
-        result.neighborhoods =
-          result.neighborhoods && result.neighborhoods !== ""
-            ? result.neighborhoods
-            : "N/A";
-        result.comunidades =
-          result.comunidades && result.comunidades !== ""
-            ? result.comunidades
-            : "N/A";
-        result.neighborhood_source =
-          result.neighborhood_source && result.neighborhood_source !== ""
-            ? result.neighborhood_source
-            : "N/A";
-        result.community_source =
-          result.community_source && result.community_source !== ""
-            ? result.community_source
-            : "N/A";
 
         return result;
       } catch (error) {
@@ -1751,6 +1796,7 @@ Ejemplo cuando no hay datos:
       geocodeWithMapbox,
       geocodeWithGeocodio,
       getNeighborhoodFromGemini,
+      addLog,
       normalizeValue,
     ]
   );
