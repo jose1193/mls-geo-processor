@@ -147,6 +147,7 @@ export interface FileData {
   data: MLSData[];
   columns: string[];
   fileName: string;
+  fileSize: number; // Size in bytes
 }
 
 // In-memory cache interface
@@ -1647,7 +1648,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
             const autoSaveResult = await autoSave.autoSaveResults({
               results: allProcessedResults,
               originalFilename: fileData?.fileName || "unknown_file.xlsx",
-              originalFileSize: undefined, // Could be added to fileData if needed
+              originalFileSize: fileData?.fileSize, // Now we have the original file size
               jobName: `MLS Processing - ${fileData?.fileName || "Unknown"}`,
               stats: {
                 totalProcessed: processedCount,
@@ -2053,6 +2054,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
           data: excelData,
           columns,
           fileName: file.name,
+          fileSize: file.size, // Capture original file size in bytes
         });
 
         setDetectedColumns(detectedCols);
@@ -2513,6 +2515,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       data: recoveryData.validAddresses,
       columns: Object.keys(recoveryData.validAddresses[0] || {}),
       fileName: recoveryData.fileName,
+      fileSize: 0, // Recovery data doesn't have original file size
     });
     setBatchConfig(recoveryData.batchConfig);
 
