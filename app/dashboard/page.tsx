@@ -523,14 +523,15 @@ export default function DashboardPage() {
                 </Link>
               )}
 
-              <Button
-                variant="outline"
-                className="w-full justify-start opacity-50 cursor-not-allowed"
-                disabled
-              >
-                <BarChart3 className="h-4 w-4 mr-2" />
-                View Reports (Soon)
-              </Button>
+              <Link href="/reports">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start transition-all duration-200 transform hover:scale-105"
+                >
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  View Reports
+                </Button>
+              </Link>
             </div>
           </CardContent>
         </Card>

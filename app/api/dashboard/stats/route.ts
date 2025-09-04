@@ -49,67 +49,74 @@ export async function GET() {
       .from("users")
       .select("*", { count: "exact", head: true });
 
+    // Get total processed records from mls_completed_files
+    const { data: completedFiles, error: completedError } = await supabase
+      .from("mls_completed_files")
+      .select("total_records, successful_records");
+
+    let totalProcessed = 0;
+    let totalSuccessful = 0;
+    let successRate = "0%";
+
+    if (!completedError && completedFiles) {
+      totalProcessed = completedFiles.reduce(
+        (sum, file) => sum + (file.total_records || 0),
+        0
+      );
+      totalSuccessful = completedFiles.reduce(
+        (sum, file) => sum + (file.successful_records || 0),
+        0
+      );
+
+      if (totalProcessed > 0) {
+        const rate = (totalSuccessful / totalProcessed) * 100;
+        successRate = `${rate.toFixed(1)}%`;
+      }
+    }
+
     // Get last activity from multiple sources (prioritized)
     let lastActivity = "Never";
 
     // 1. Try to get from user_sessions table first (most accurate)
-    const { data: sessionData, error: sessionError } = await supabase
+    const { data: sessionData } = await supabase
       .from("user_sessions")
       .select("last_activity")
       .order("last_activity", { ascending: false })
       .limit(1)
       .single();
 
-    console.log("🔍 Session data:", sessionData, "Error:", sessionError);
-
     if (sessionData?.last_activity) {
       lastActivity = getTimeAgo(sessionData.last_activity);
-      console.log("✅ Using session data:", lastActivity);
     } else {
       // 2. Fallback to users.last_login if no session data
-      const { data: userLoginData, error: loginError } = await supabase
+      const { data: userLoginData } = await supabase
         .from("users")
         .select("last_login")
         .order("last_login", { ascending: false })
         .limit(1)
         .single();
 
-      console.log("🔍 User login data:", userLoginData, "Error:", loginError);
-
       if (userLoginData?.last_login) {
         lastActivity = getTimeAgo(userLoginData.last_login);
-        console.log("✅ Using user login data:", lastActivity);
       } else {
         // 3. Fallback to security_logs if no login data
-        const { data: securityLogData, error: logError } = await supabase
+        const { data: securityLogData } = await supabase
           .from("security_logs")
           .select("created_at")
           .order("created_at", { ascending: false })
           .limit(1)
           .single();
 
-        console.log(
-          "🔍 Security log data:",
-          securityLogData,
-          "Error:",
-          logError
-        );
-
         if (securityLogData?.created_at) {
           lastActivity = getTimeAgo(securityLogData.created_at);
-          console.log("✅ Using security log data:", lastActivity);
         }
       }
     }
 
-    console.log("🎯 Final lastActivity:", lastActivity);
-
-    // For now, we'll simulate some stats since we don't have processing tables yet
-    // You can replace this with real data from your processing tables
     const stats = {
       totalUsers: totalUsers || 0,
-      totalProcessed: 1250, // Replace with real count from processing table
-      successRate: "94%", // Calculate from real processing results
+      totalProcessed: totalProcessed,
+      successRate: successRate,
       lastActivity: lastActivity,
     };
 
