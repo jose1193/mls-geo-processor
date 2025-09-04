@@ -194,34 +194,34 @@ export interface OptimizedProcessingProgress {
 // Adaptive configuration based on dataset size
 const getOptimizedConfigForSize = (recordCount: number) => {
   if (recordCount <= 50) {
-    // Small test files (9-50 records) - Fast & Responsive
+    // Small test files (9-50 records) - Conservative to avoid 429
     return {
-      CONCURRENCY_LIMIT: 15,
-      BATCH_SIZE: 25,
+      CONCURRENCY_LIMIT: 5, // Reduced from 15 to avoid rate limits
+      BATCH_SIZE: 10, // Smaller batches
       MAX_RETRIES: 3,
-      TARGET_THROUGHPUT: 25,
+      TARGET_THROUGHPUT: 15, // Reduced from 25
       MEMORY_CLEANUP_INTERVAL: 10000,
-      RETRY_DELAY_BASE: 500,
+      RETRY_DELAY_BASE: 1000, // Increased delay
       CACHE_EXPIRY_HOURS: 6,
     };
   } else if (recordCount <= 1000) {
     // Medium files (1000 records) - Balanced Performance
     return {
-      CONCURRENCY_LIMIT: 20,
-      BATCH_SIZE: 100,
+      CONCURRENCY_LIMIT: 8, // Reduced from 20
+      BATCH_SIZE: 50, // Reduced from 100
       MAX_RETRIES: 3,
-      TARGET_THROUGHPUT: 22,
+      TARGET_THROUGHPUT: 18, // Reduced from 22
       MEMORY_CLEANUP_INTERVAL: 8000,
-      RETRY_DELAY_BASE: 1000,
+      RETRY_DELAY_BASE: 1200, // Increased delay
       CACHE_EXPIRY_HOURS: 12,
     };
   } else if (recordCount <= 10000) {
     // Large files (10K records) - Optimized Throughput
     return {
-      CONCURRENCY_LIMIT: 15,
-      BATCH_SIZE: 200,
+      CONCURRENCY_LIMIT: 10, // Reduced from 15
+      BATCH_SIZE: 100, // Reduced from 200
       MAX_RETRIES: 2,
-      TARGET_THROUGHPUT: 18,
+      TARGET_THROUGHPUT: 15, // Reduced from 18
       MEMORY_CLEANUP_INTERVAL: 6000,
       RETRY_DELAY_BASE: 1500,
       CACHE_EXPIRY_HOURS: 24,
@@ -229,10 +229,10 @@ const getOptimizedConfigForSize = (recordCount: number) => {
   } else {
     // Very large files (30K-110K) - Ultra Stable
     return {
-      CONCURRENCY_LIMIT: 10,
-      BATCH_SIZE: 100,
+      CONCURRENCY_LIMIT: 8, // Reduced from 10
+      BATCH_SIZE: 80, // Reduced from 100
       MAX_RETRIES: 2,
-      TARGET_THROUGHPUT: 15,
+      TARGET_THROUGHPUT: 12, // Reduced from 15
       MEMORY_CLEANUP_INTERVAL: 5000,
       RETRY_DELAY_BASE: 2000,
       CACHE_EXPIRY_HOURS: 48,
@@ -242,17 +242,17 @@ const getOptimizedConfigForSize = (recordCount: number) => {
 
 // Base configuration - will be overridden by adaptive config
 const OPTIMIZED_CONFIG = {
-  // No artificial delays - rely on intelligent rate limiting
-  DELAY_BETWEEN_REQUESTS: 0,
-  GEMINI_DELAY: 0,
+  // Small delays to prevent rate limiting
+  DELAY_BETWEEN_REQUESTS: 100, // 100ms delay between requests
+  GEMINI_DELAY: 150, // 150ms delay for Gemini requests
 
   // Default values (will be overridden)
   CONCURRENCY_LIMIT: 15,
   BATCH_SIZE: 100,
 
   // Queue configuration
-  QUEUE_CONCURRENCY: 30,
-  QUEUE_INTERVAL: 100,
+  QUEUE_CONCURRENCY: 20, // Reduced from 30
+  QUEUE_INTERVAL: 200, // Increased from 100ms
 
   // Smart retry configuration
   MAX_RETRIES: 3,
@@ -279,10 +279,10 @@ const OPTIMIZED_API_LIMITS = {
   geocodio: 50000, // Daily limit
   gemini: 100000, // Daily limit
 
-  // Per-minute rates (conservative for large datasets)
-  mapboxPerMinute: 300, // Reduced from 600 for stability
-  geocodioPerMinute: 500, // Reduced from 1000 for stability
-  geminiPerMinute: 750, // Reduced from 1500 for stability
+  // Per-minute rates (very conservative to avoid 429 errors)
+  mapboxPerMinute: 200, // Reduced from 300 for extra stability
+  geocodioPerMinute: 300, // Reduced from 500 for extra stability
+  geminiPerMinute: 500, // Reduced from 750 for extra stability
 };
 
 // Log API limits for reference
@@ -833,6 +833,13 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       city: string,
       county: string
     ): Promise<OptimizedMapboxResult> => {
+      // Add delay before request to prevent rate limiting
+      if (OPTIMIZED_CONFIG.DELAY_BETWEEN_REQUESTS > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, OPTIMIZED_CONFIG.DELAY_BETWEEN_REQUESTS)
+        );
+      }
+
       const startTime = performance.now();
 
       try {
@@ -940,6 +947,13 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       city: string,
       county: string
     ): Promise<OptimizedGeocodioResult> => {
+      // Add delay before request to prevent rate limiting
+      if (OPTIMIZED_CONFIG.DELAY_BETWEEN_REQUESTS > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, OPTIMIZED_CONFIG.DELAY_BETWEEN_REQUESTS)
+        );
+      }
+
       const startTime = performance.now();
 
       try {
@@ -976,10 +990,14 @@ export function useMLSProcessorOptimized(userId?: string | null) {
 
             if (!response.ok) {
               if (response.status === 429) {
+                console.log("Geocodio rate limit hit, waiting 5 seconds...");
+                await new Promise((resolve) => setTimeout(resolve, 5000));
                 const error = new Error("Rate limited by Geocodio") as Error & {
                   name: string;
                 };
                 error.name = "AbortError";
+                // Add extra delay for rate limiting
+                await new Promise((resolve) => setTimeout(resolve, 5000)); // 5 second delay
                 throw error;
               }
               throw new Error(
@@ -1062,6 +1080,17 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       city: string,
       county: string
     ): Promise<OptimizedGeminiResult> => {
+      // Add delay before request to prevent rate limiting
+      if (
+        OPTIMIZED_CONFIG.DELAY_BETWEEN_REQUESTS > 0 ||
+        OPTIMIZED_CONFIG.GEMINI_DELAY > 0
+      ) {
+        const delay =
+          OPTIMIZED_CONFIG.DELAY_BETWEEN_REQUESTS +
+          OPTIMIZED_CONFIG.GEMINI_DELAY;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+
       const startTime = performance.now();
 
       try {
@@ -1440,7 +1469,12 @@ export function useMLSProcessorOptimized(userId?: string | null) {
   const processAddressesBatch = useCallback(
     async (
       addressDataList: MLSData[],
-      detectedCols: DetectedColumns
+      detectedCols: DetectedColumns,
+      options?: {
+        continueFromIndex?: number;
+        totalOriginalRecords?: number;
+        existingResults?: ProcessedResult[];
+      }
     ): Promise<void> => {
       if (!addressDataList.length || shouldStopProcessing.current) return;
 
@@ -1471,22 +1505,35 @@ export function useMLSProcessorOptimized(userId?: string | null) {
         }
       }, OPTIMIZED_CONFIG.MEMORY_CLEANUP_INTERVAL);
 
-      const totalRecords = addressDataList.length;
-      const totalBatches = Math.ceil(totalRecords / batchConfig.batchSize);
-      let processedCount = 0;
+      const totalRecords =
+        options?.totalOriginalRecords || addressDataList.length;
+      const totalBatches = Math.ceil(
+        addressDataList.length / batchConfig.batchSize
+      );
+      const startingIndex = options?.continueFromIndex || 0;
+      let processedCount = startingIndex; // Start from where we left off
       let successCount = 0;
 
-      // Local array to accumulate all results for auto-save
-      const allProcessedResults: ProcessedResult[] = [];
+      // Initialize with existing results if continuing
+      const allProcessedResults: ProcessedResult[] = [
+        ...(options?.existingResults || []),
+      ];
 
       addLog(
-        `🚀 Starting LARGE DATASET processing: ${totalRecords} records in ${totalBatches} batches`,
+        `🚀 ${options?.continueFromIndex ? "Continuing" : "Starting"} LARGE DATASET processing: ${addressDataList.length} ${options?.continueFromIndex ? "remaining" : ""} records in ${totalBatches} batches`,
         "info"
       );
       addLog(
         `⚙️ 100K+ Config: ${batchConfig.concurrencyLimit} concurrent, ${batchConfig.batchSize} batch size (optimized for stability)`,
         "info"
       );
+
+      if (options?.continueFromIndex) {
+        addLog(
+          `🔄 Continuing from record ${startingIndex + 1}/${totalRecords} (${addressDataList.length} remaining)`,
+          "info"
+        );
+      }
 
       if (totalRecords > 50000) {
         addLog(
@@ -1521,7 +1568,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
             limit(async () => {
               if (shouldStopProcessing.current) return null;
 
-              const globalIndex = startIdx + localIndex;
+              const globalIndex = startingIndex + startIdx + localIndex; // Include starting index for continuation
               const address = addressData[detectedCols.address!] as string;
 
               // Update progress
@@ -1620,29 +1667,50 @@ export function useMLSProcessorOptimized(userId?: string | null) {
         const finalTime = Date.now() - startTime.current;
         const finalThroughput = processedCount / (finalTime / 1000);
 
-        addLog(
-          `🎉 Batch processing completed! ${processedCount} records processed in ${Math.round(finalTime / 1000)}s (${Math.round(finalThroughput)} rec/s)`,
-          "success"
-        );
+        // Check if processing was completed naturally (100%) or stopped manually
+        const wasCompletedNaturally =
+          !shouldStopProcessing.current && processedCount === totalRecords;
+        const wasStoppedManually = shouldStopProcessing.current;
+
+        if (wasStoppedManually) {
+          addLog(
+            `⏹️ Processing stopped manually at ${processedCount}/${totalRecords} records (${Math.round((processedCount / totalRecords) * 100)}%)`,
+            "warning"
+          );
+        } else {
+          addLog(
+            `🎉 Batch processing completed! ${processedCount} records processed in ${Math.round(finalTime / 1000)}s (${Math.round(finalThroughput)} rec/s)`,
+            "success"
+          );
+        }
 
         addLog(
           `📊 Final Stats: ${successCount}/${processedCount} success (${((successCount / processedCount) * 100).toFixed(1)}%), ${performanceMetrics.current.cacheHitCount} cache hits`,
           "performance"
         );
 
-        // Auto-save completed file to Supabase Storage
-        console.log("🔍 AUTO-SAVE CHECK:");
+        // 🔥 IMPORTANT: Only auto-save to storage if processing completed naturally (100%)
+        // Do NOT auto-save partial results when user stops manually
+        console.log("🔍 AUTO-SAVE ELIGIBILITY CHECK:");
+        console.log("   wasCompletedNaturally:", wasCompletedNaturally);
+        console.log("   wasStoppedManually:", wasStoppedManually);
         console.log("   processedCount:", processedCount);
+        console.log("   totalRecords:", totalRecords);
         console.log(
-          "   allProcessedResults.length:",
-          allProcessedResults.length
+          "   shouldStopProcessing.current:",
+          shouldStopProcessing.current
         );
-        console.log("   userId:", userId);
-        console.log("   fileData?.fileName:", fileData?.fileName);
 
-        if (processedCount > 0 && allProcessedResults.length > 0) {
-          addLog("💾 Auto-saving processed file to storage...", "info");
-          console.log("🚀 AUTO-SAVE STARTING - All conditions met!");
+        if (
+          wasCompletedNaturally &&
+          processedCount > 0 &&
+          allProcessedResults.length > 0
+        ) {
+          addLog(
+            "💾 Auto-saving completed file to storage (100% processed)...",
+            "info"
+          );
+          console.log("🚀 AUTO-SAVE STARTING - Processing completed at 100%!");
 
           try {
             const autoSaveResult = await autoSave.autoSaveResults({
@@ -1679,6 +1747,8 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                   "info"
                 );
               }
+              // Show success modal only when processing completed at 100% and auto-saved
+              setShowSuccessModal(true);
             } else {
               addLog(`⚠️ Auto-save failed: ${autoSaveResult.error}`, "warning");
             }
@@ -1688,6 +1758,18 @@ export function useMLSProcessorOptimized(userId?: string | null) {
               "error"
             );
           }
+        } else if (wasStoppedManually) {
+          addLog(
+            "ℹ️ Auto-save skipped - processing was stopped manually. Use 'Download Current Results' to save partial data.",
+            "info"
+          );
+          console.log("⏹️ AUTO-SAVE SKIPPED - Processing was stopped manually");
+        } else {
+          addLog(
+            "ℹ️ Auto-save skipped - no data to save or processing incomplete.",
+            "info"
+          );
+          console.log("❌ AUTO-SAVE SKIPPED - Conditions not met");
         }
       } catch (error) {
         addLog(
@@ -1710,15 +1792,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
         shouldStopProcessing.current = false;
       }
     },
-    [
-      batchConfig,
-      processAddressOptimized,
-      addLog,
-      autoSave,
-      fileData,
-      stats,
-      userId,
-    ]
+    [batchConfig, processAddressOptimized, addLog, autoSave, fileData, stats]
   );
 
   // ===================================================================
@@ -2137,6 +2211,41 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       return;
     }
 
+    // 🔥 IMPORTANT: Only clear previous results when NOT continuing from recovery
+    // This prevents losing recovery data but cleans up for fresh starts
+    if (!isContinuingFromRecovery) {
+      console.log("🧹 Fresh start - clearing all previous data");
+      setResults([]);
+      resultsRef.current = [];
+      setStats({
+        totalProcessed: 0,
+        successRate: "0%",
+        throughputPerSecond: 0,
+        avgProcessingTimeMs: 0,
+        mapboxCount: 0,
+        geocodioCount: 0,
+        geminiCount: 0,
+        cacheHits: 0,
+        totalProcessingTimeMs: 0,
+        batchesCompleted: 0,
+        currentBatchSize: 0,
+        estimatedTimeRemaining: "Calculating...",
+      });
+
+      // Reset performance metrics
+      performanceMetrics.current = {
+        totalRequests: 0,
+        totalProcessingTime: 0,
+        cacheHitCount: 0,
+        errorCount: 0,
+        rateLimitCount: 0,
+      };
+    } else {
+      console.log("🔄 Continuing from recovery - preserving existing data");
+      // Reset the flag after checking
+      setIsContinuingFromRecovery(false);
+    }
+
     // Clear all caches before starting fresh processing
     geocodingCache.current.clear();
     geminiCache.current.clear();
@@ -2170,7 +2279,13 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       "info"
     );
     processAddressesBatch(fileData.data, detectedColumns);
-  }, [fileData, detectedColumns, processAddressesBatch, addLog]);
+  }, [
+    fileData,
+    detectedColumns,
+    processAddressesBatch,
+    addLog,
+    isContinuingFromRecovery,
+  ]);
 
   const stopProcessing = useCallback(() => {
     console.log(
@@ -2536,7 +2651,31 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       "🔄 After continue - resultsRef.current.length:",
       resultsRef.current.length
     );
-  }, [recoveryData, clearProgress, addLog]);
+
+    // Automatically start processing after a brief delay to let state update
+    setTimeout(() => {
+      const remainingAddresses = recoveryData.validAddresses.slice(
+        recoveryData.currentIndex
+      );
+      if (remainingAddresses.length > 0) {
+        addLog(
+          `🚀 Auto-continuing processing from record ${recoveryData.currentIndex + 1}/${recoveryData.totalAddresses}`,
+          "info"
+        );
+        processAddressesBatch(
+          remainingAddresses,
+          recoveryData.detectedColumns,
+          {
+            continueFromIndex: recoveryData.currentIndex,
+            totalOriginalRecords: recoveryData.totalAddresses,
+            existingResults: recoveryData.results,
+          }
+        );
+      } else {
+        addLog("✅ All records already processed!", "success");
+      }
+    }, 100);
+  }, [recoveryData, clearProgress, addLog, processAddressesBatch]);
 
   // Discard saved progress and start fresh
   const discardProgress = useCallback(() => {
