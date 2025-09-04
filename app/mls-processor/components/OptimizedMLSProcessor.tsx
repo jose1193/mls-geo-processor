@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,8 +23,13 @@ import {
 import Image from "next/image";
 import { useMLSProcessorOptimized } from "@/app/mls-processor/hooks/useMLSProcessor-optimized";
 import OptimizedModals from "./OptimizedModals";
+import { AutoSaveStatus } from "./AutoSaveStatus";
 
 const OptimizedMLSProcessor = () => {
+  // Get user session for auto-save functionality
+  const { data: session } = useSession();
+  const userId = session?.user?.id || null;
+
   const {
     stats,
     logs,
@@ -42,6 +48,11 @@ const OptimizedMLSProcessor = () => {
     setDetectedColumns,
     performanceMetrics,
 
+    // Auto-save properties
+    autoSaveState,
+    clearAutoSaveError,
+    refreshCompletedFiles,
+
     // Modal States
     showRecoveryModal,
     showStopModal,
@@ -57,7 +68,7 @@ const OptimizedMLSProcessor = () => {
     closeStopModal,
     closeRecoveryModal,
     closeSuccessModal,
-  } = useMLSProcessorOptimized();
+  } = useMLSProcessorOptimized(userId);
 
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
 
@@ -132,6 +143,17 @@ const OptimizedMLSProcessor = () => {
           <p className="text-gray-300 mb-2">
             ⚡ High-Performance Pipeline - Built for 100K+ Records
           </p>
+          {session?.user && (
+            <p className="text-sm text-blue-300">
+              👤 Logged in as:{" "}
+              {session.user.email || session.user.name || "User"}
+            </p>
+          )}
+          {!session && (
+            <p className="text-sm text-yellow-300">
+              ⚠️ Not logged in - Files will not be auto-saved
+            </p>
+          )}
         </div>
 
         {/* Performance Dashboard */}
@@ -830,6 +852,14 @@ const OptimizedMLSProcessor = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* Auto-Save Status Panel */}
+        <AutoSaveStatus
+          autoSaveState={autoSaveState}
+          refreshCompletedFiles={refreshCompletedFiles}
+          clearAutoSaveError={clearAutoSaveError}
+          className="mb-6"
+        />
       </div>
 
       {/* Modals */}

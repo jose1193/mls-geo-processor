@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import PQueue from "p-queue";
 import pRetry from "p-retry";
 import pLimit from "p-limit";
+import { useAutoSave } from "./useAutoSave";
 
 // ===================================================================
 // OPTIMIZED MLS PROCESSOR - DESIGNED FOR 100K+ RECORDS
@@ -438,7 +439,7 @@ class GeminiMemoryCache {
 // OPTIMIZED MLS PROCESSOR HOOK
 // ===================================================================
 
-export function useMLSProcessorOptimized() {
+export function useMLSProcessorOptimized(userId?: string | null) {
   const logIdCounter = useRef(0);
   const shouldStopProcessing = useRef(false);
   const startTime = useRef<number>(0);
@@ -446,6 +447,9 @@ export function useMLSProcessorOptimized() {
   const processingQueue = useRef<PQueue | null>(null);
   const memoryCleanupInterval = useRef<NodeJS.Timeout | null>(null);
   const resultsRef = useRef<ProcessedResult[]>([]);
+
+  // Auto-save integration
+  const autoSave = useAutoSave(userId);
 
   // In-memory caches
   const geocodingCache = useRef(new MapboxMemoryCache());
@@ -1443,6 +1447,13 @@ export function useMLSProcessorOptimized() {
       setIsProcessing(true);
       startTime.current = Date.now();
 
+      // Set processing start time for auto-save IMMEDIATELY
+      console.log("🕐 Setting processing start time for auto-save...");
+      autoSave.setProcessingStartTime();
+
+      // Wait a tick to ensure the state is updated
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
       // Initialize processing queue with optimized concurrency
       processingQueue.current = new PQueue({
         concurrency: batchConfig.concurrencyLimit,
@@ -1463,6 +1474,9 @@ export function useMLSProcessorOptimized() {
       const totalBatches = Math.ceil(totalRecords / batchConfig.batchSize);
       let processedCount = 0;
       let successCount = 0;
+
+      // Local array to accumulate all results for auto-save
+      const allProcessedResults: ProcessedResult[] = [];
 
       addLog(
         `🚀 Starting LARGE DATASET processing: ${totalRecords} records in ${totalBatches} batches`,
@@ -1543,6 +1557,9 @@ export function useMLSProcessorOptimized() {
             )
             .filter(Boolean) as ProcessedResult[];
 
+          // Accumulate results for auto-save
+          allProcessedResults.push(...batchResults);
+
           // Update results and stats
           setResults((prev) => [...prev, ...batchResults]);
           processedCount += batchResults.length;
@@ -1611,6 +1628,66 @@ export function useMLSProcessorOptimized() {
           `📊 Final Stats: ${successCount}/${processedCount} success (${((successCount / processedCount) * 100).toFixed(1)}%), ${performanceMetrics.current.cacheHitCount} cache hits`,
           "performance"
         );
+
+        // Auto-save completed file to Supabase Storage
+        console.log("🔍 AUTO-SAVE CHECK:");
+        console.log("   processedCount:", processedCount);
+        console.log(
+          "   allProcessedResults.length:",
+          allProcessedResults.length
+        );
+        console.log("   userId:", userId);
+        console.log("   fileData?.fileName:", fileData?.fileName);
+
+        if (processedCount > 0 && allProcessedResults.length > 0) {
+          addLog("💾 Auto-saving processed file to storage...", "info");
+          console.log("🚀 AUTO-SAVE STARTING - All conditions met!");
+
+          try {
+            const autoSaveResult = await autoSave.autoSaveResults({
+              results: allProcessedResults,
+              originalFilename: fileData?.fileName || "unknown_file.xlsx",
+              originalFileSize: undefined, // Could be added to fileData if needed
+              jobName: `MLS Processing - ${fileData?.fileName || "Unknown"}`,
+              stats: {
+                totalProcessed: processedCount,
+                successRate: `${((successCount / processedCount) * 100).toFixed(1)}%`,
+                throughputPerSecond: finalThroughput,
+                avgProcessingTimeMs: finalTime / processedCount,
+                mapboxCount: stats.mapboxCount,
+                geocodioCount: stats.geocodioCount,
+                geminiCount: stats.geminiCount,
+                cacheHits: performanceMetrics.current.cacheHitCount,
+                totalProcessingTimeMs: finalTime,
+                batchesCompleted: totalBatches,
+                currentBatchSize: batchConfig.batchSize,
+                estimatedTimeRemaining: "Completed",
+              },
+              batchConfig,
+              detectedColumns: detectedCols,
+            });
+
+            if (autoSaveResult.success) {
+              addLog(
+                `✅ File auto-saved successfully! Record ID: ${autoSaveResult.record_id}`,
+                "success"
+              );
+              if (autoSaveResult.storage_url) {
+                addLog(
+                  `📁 Download URL: ${autoSaveResult.storage_url}`,
+                  "info"
+                );
+              }
+            } else {
+              addLog(`⚠️ Auto-save failed: ${autoSaveResult.error}`, "warning");
+            }
+          } catch (autoSaveError) {
+            addLog(
+              `❌ Auto-save error: ${autoSaveError instanceof Error ? autoSaveError.message : "Unknown error"}`,
+              "error"
+            );
+          }
+        }
       } catch (error) {
         addLog(
           `❌ Batch processing error: ${(error as Error).message}`,
@@ -1632,7 +1709,15 @@ export function useMLSProcessorOptimized() {
         shouldStopProcessing.current = false;
       }
     },
-    [batchConfig, processAddressOptimized, addLog]
+    [
+      batchConfig,
+      processAddressOptimized,
+      addLog,
+      autoSave,
+      fileData,
+      stats,
+      userId,
+    ]
   );
 
   // ===================================================================
@@ -2553,6 +2638,16 @@ export function useMLSProcessorOptimized() {
     showSuccessModal,
     recoveryData,
 
+    // Auto-save state and actions
+    autoSaveState: {
+      isSaving: autoSave.isSaving,
+      lastSaved: autoSave.lastSaved,
+      error: autoSave.error,
+      completedFiles: autoSave.completedFiles,
+      isLoadingFiles: autoSave.isLoadingFiles,
+      hasCompletedFiles: autoSave.hasCompletedFiles,
+    },
+
     // Actions
     handleFileUpload,
     startProcessing,
@@ -2574,6 +2669,12 @@ export function useMLSProcessorOptimized() {
     // Cache management
     getCacheStats,
     clearCache,
+
+    // Auto-save functions
+    getCompletedFilesList: () => autoSave.completedFiles,
+    clearAutoSaveError: autoSave.clearError,
+    refreshCompletedFiles: autoSave.refreshCompletedFiles,
+    resetAutoSaveState: autoSave.refreshCompletedFiles,
 
     // Utilities
     setDetectedColumns,
