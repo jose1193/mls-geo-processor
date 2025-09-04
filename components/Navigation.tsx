@@ -17,12 +17,26 @@ export function Navigation() {
   // Since we removed role-based access, all authorized users have access
   const isAdmin = true; // All users have admin access for now
 
+  // Build navigation items - order matters for active state detection
   const navItems = [
     {
       name: "Dashboard",
       href: "/dashboard",
       icon: Home,
     },
+  ];
+
+  // Add admin route first (more specific route)
+  if (isAdmin) {
+    navItems.push({
+      name: "User Management",
+      href: "/mls-processor/admin",
+      icon: Users,
+    });
+  }
+
+  // Add other routes after more specific ones
+  navItems.push(
     {
       name: "MLS Processor",
       href: "/mls-processor",
@@ -32,16 +46,8 @@ export function Navigation() {
       name: "Reports",
       href: "/reports",
       icon: BarChart3,
-    },
-  ];
-
-  if (isAdmin) {
-    navItems.push({
-      name: "User Management",
-      href: "/mls-processor/admin",
-      icon: Users,
-    });
-  }
+    }
+  );
 
   return (
     <nav className="bg-white shadow-sm border-b border-gray-200">
@@ -62,10 +68,33 @@ export function Navigation() {
             <div className="hidden sm:ml-8 sm:flex sm:space-x-2">
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive =
-                  pathname === item.href ||
-                  (item.href !== "/dashboard" &&
-                    pathname.startsWith(item.href));
+                // More precise active state logic
+                const isActive = (() => {
+                  if (pathname === item.href) {
+                    return true;
+                  }
+
+                  // Special case for dashboard - only exact match
+                  if (item.href === "/dashboard") {
+                    return pathname === "/dashboard";
+                  }
+
+                  // For other routes, check if pathname starts with the href
+                  // but make sure we don't have false positives
+                  if (pathname.startsWith(item.href)) {
+                    // Check if there's a more specific route that should take precedence
+                    const moreSpecificRoute = navItems.find(
+                      (navItem) =>
+                        navItem.href !== item.href &&
+                        navItem.href.startsWith(item.href) &&
+                        pathname.startsWith(navItem.href)
+                    );
+                    return !moreSpecificRoute;
+                  }
+
+                  return false;
+                })();
+
                 return (
                   <Link
                     key={item.name}
@@ -95,9 +124,33 @@ export function Navigation() {
           <div className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const isActive =
-                pathname === item.href ||
-                (item.href !== "/dashboard" && pathname.startsWith(item.href));
+              // Same precise active state logic for mobile
+              const isActive = (() => {
+                if (pathname === item.href) {
+                  return true;
+                }
+
+                // Special case for dashboard - only exact match
+                if (item.href === "/dashboard") {
+                  return pathname === "/dashboard";
+                }
+
+                // For other routes, check if pathname starts with the href
+                // but make sure we don't have false positives
+                if (pathname.startsWith(item.href)) {
+                  // Check if there's a more specific route that should take precedence
+                  const moreSpecificRoute = navItems.find(
+                    (navItem) =>
+                      navItem.href !== item.href &&
+                      navItem.href.startsWith(item.href) &&
+                      pathname.startsWith(navItem.href)
+                  );
+                  return !moreSpecificRoute;
+                }
+
+                return false;
+              })();
+
               return (
                 <Link
                   key={item.name}
