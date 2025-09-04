@@ -15,8 +15,13 @@ export function ColumnDetection({
 
   const columnTypes = [
     {
+      key: "mlNumber" as keyof DetectedColumns,
+      label: "� ML# (MLS Number)",
+      required: true,
+    },
+    {
       key: "address" as keyof DetectedColumns,
-      label: "📍 Address",
+      label: "� Address",
       required: true,
     },
     {
@@ -32,6 +37,16 @@ export function ColumnDetection({
     {
       key: "county" as keyof DetectedColumns,
       label: "🏛️ County",
+      required: false,
+    },
+    {
+      key: "neighborhoods" as keyof DetectedColumns,
+      label: "🏘️ Neighborhoods",
+      required: false,
+    },
+    {
+      key: "communities" as keyof DetectedColumns,
+      label: "🏞️ Communities",
       required: false,
     },
   ];

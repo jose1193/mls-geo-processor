@@ -5,3 +5,4 @@ export { ProcessingProgress } from "./ProcessingProgress";
 export { ResultsTable } from "./ResultsTable";
 export { StatsGrid } from "./StatsGrid";
 export { ColumnDetection } from "./ColumnDetection";
+export { default as OptimizedModals } from "./OptimizedModals";

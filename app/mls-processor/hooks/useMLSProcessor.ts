@@ -3,7 +3,9 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
 
-// Types
+// =====================
+// Types & Interfaces
+// =====================
 export interface MLSData {
   [key: string]: string | number | boolean | null | undefined;
 }
@@ -24,21 +26,17 @@ export interface ProcessedResult extends MLSData {
   error?: string;
 }
 
-// Gemini API response types
 export interface GeminiSuccessResult {
   success: true;
   neighborhood: string | null;
   community: string | null;
 }
-
 export interface GeminiErrorResult {
   success: false;
   error: string;
 }
-
 export type GeminiResult = GeminiSuccessResult | GeminiErrorResult;
 
-// Mapbox API response types
 export interface MapboxSuccessResult {
   success: true;
   formatted: string;
@@ -58,15 +56,12 @@ export interface MapboxSuccessResult {
   "House Number": string | null;
   street_name?: string | null;
 }
-
 export interface MapboxErrorResult {
   success: false;
   error: string;
 }
-
 export type MapboxResult = MapboxSuccessResult | MapboxErrorResult;
 
-// Geocodio API response types
 export interface GeocodioSuccessResult {
   success: true;
   formatted: string;
@@ -91,12 +86,10 @@ export interface GeocodioSuccessResult {
   "House Number": string | null;
   neighbourhood?: string | null;
 }
-
 export interface GeocodioErrorResult {
   success: false;
   error: string;
 }
-
 export type GeocodioResult = GeocodioSuccessResult | GeocodioErrorResult;
 
 export interface Stats {
@@ -106,15 +99,11 @@ export interface Stats {
   geocodioCount: number;
   geminiCount: number;
 }
-
-// API Limits Configuration
 export interface APILimits {
   mapbox: number;
   geocodio: number;
   gemini: number;
 }
-
-// API Usage Tracking
 export interface APIUsage {
   mapboxUsed: number;
   geocodioUsed: number;
@@ -126,52 +115,61 @@ export interface APIUsage {
   geocodioPercentage: number;
   geminiPercentage: number;
 }
-
 export interface LogEntry {
   id: string;
   timestamp: string;
   message: string;
   type: "info" | "success" | "error" | "warning";
 }
-
 export interface Progress {
   current: number;
   total: number;
   percentage: number;
   currentAddress: string;
 }
-
 export interface DetectedColumns {
   address: string | null;
   zip: string | null;
   city: string | null;
   county: string | null;
 }
-
 export interface FileData {
   data: MLSData[];
   columns: string[];
   fileName: string;
 }
 
-// Constants - Dynamic delays based on environment
+// =====================
+// Constants
+// =====================
 const isDevelopment = process.env.NODE_ENV === "development";
-const DELAY_BETWEEN_REQUESTS = isDevelopment ? 500 : 1500; // Shorter delay in dev, longer in production
-const GEMINI_DELAY = isDevelopment ? 1000 : 3000; // Shorter delay in dev, longer in production
+const DELAY_BETWEEN_REQUESTS = isDevelopment ? 500 : 1500;
+const GEMINI_DELAY = isDevelopment ? 1000 : 3000;
+const CONCURRENCY_LIMIT = isDevelopment ? 6 : 3;
 
-// API Limits Configuration - Configurable limits for each service
 const API_LIMITS: APILimits = {
-  mapbox: 100000, // Mapbox free tier limit
-  geocodio: 50000, // Geocodio premium tier limit
-  gemini: 100000, // Gemini premium - 100k requests
+  mapbox: 100000,
+  geocodio: 50000,
+  gemini: 100000,
 };
 
-// Storage keys
-const SAVE_INTERVAL = 5; // Auto-save every 5 processed records (more frequent)
+const SAVE_INTERVAL = 5;
 const STORAGE_KEY = "mls_processing_progress";
 const CACHE_KEY = "mls_address_cache";
-const GEMINI_CACHE_KEY = "mls_gemini_cache"; // Separate cache for Gemini results
-const API_USAGE_KEY = "mls_api_usage"; // New key for API usage tracking
+const GEMINI_CACHE_KEY = "mls_gemini_cache";
+const API_USAGE_KEY = "mls_api_usage";
+
+// Recovery interface
+interface ProcessingProgress {
+  results: ProcessedResult[];
+  currentIndex: number;
+  totalAddresses: number;
+  fileName: string;
+  timestamp: number;
+  stats: Stats;
+  detectedColumns: DetectedColumns;
+  validAddresses: MLSData[];
+}
 
 // Recovery interface
 interface ProcessingProgress {
@@ -201,6 +199,10 @@ export function useMLSProcessor() {
     geocodioCount: 0,
     geminiCount: 0,
   });
+
+  // Control Mapbox disabling after repeated auth failures
+  const mapboxDisabled = useRef(false);
+  const mapbox401Count = useRef(0);
 
   // API Usage tracking state
   const [apiUsage, setApiUsage] = useState<APIUsage>({
@@ -243,23 +245,34 @@ export function useMLSProcessor() {
     limit: number;
   } | null>(null);
 
-  // Helper function to normalize neighborhood/community values
+  // Helper function to normalize neighborhood/community values - SIMPLIFIED VERSION
   const normalizeValue = useCallback(
     (value: string | null | undefined): string => {
+      // Only convert clearly empty/null values to "N/A"
       if (
         value === null ||
         value === undefined ||
         value === "" ||
         value === "null" ||
         value === "undefined" ||
-        value === "No disponible" ||
-        value === "no disponible" ||
-        value === "not available" ||
-        value === "unknown"
+        value === "N/A"
       ) {
         return "N/A";
       }
-      return String(value).trim();
+
+      const trimmed = String(value).trim();
+
+      // Check for clearly invalid values (case insensitive)
+      const lowerValue = trimmed.toLowerCase();
+      if (
+        lowerValue === "n/a" ||
+        lowerValue === "unknown" ||
+        lowerValue === "null"
+      ) {
+        return "N/A";
+      }
+
+      return trimmed;
     },
     []
   );
@@ -382,8 +395,8 @@ export function useMLSProcessor() {
             service === "mapbox"
               ? newUsage.mapboxUsed >= API_LIMITS.mapbox
               : service === "geocodio"
-              ? newUsage.geocodioUsed >= API_LIMITS.geocodio
-              : newUsage.geminiUsed >= API_LIMITS.gemini,
+                ? newUsage.geocodioUsed >= API_LIMITS.geocodio
+                : newUsage.geminiUsed >= API_LIMITS.gemini,
         });
 
         // Save to localStorage
@@ -415,14 +428,14 @@ export function useMLSProcessor() {
           service === "mapbox"
             ? apiUsage.mapboxUsed
             : service === "geocodio"
-            ? apiUsage.geocodioUsed
-            : apiUsage.geminiUsed,
+              ? apiUsage.geocodioUsed
+              : apiUsage.geminiUsed,
         limit:
           service === "mapbox"
             ? API_LIMITS.mapbox
             : service === "geocodio"
-            ? API_LIMITS.geocodio
-            : API_LIMITS.gemini,
+              ? API_LIMITS.geocodio
+              : API_LIMITS.gemini,
         withinLimit: isWithinLimit,
       });
 
@@ -779,8 +792,15 @@ export function useMLSProcessor() {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(CACHE_KEY);
     localStorage.removeItem(GEMINI_CACHE_KEY);
+    // Clear all address cache entries
+    const keys = Object.keys(localStorage);
+    keys.forEach((key) => {
+      if (key.startsWith("addr_") || key.startsWith("gemini_")) {
+        localStorage.removeItem(key);
+      }
+    });
     // DON'T clear API usage - it should persist for the day
-    console.log("🗑️ Progress cache cleared (API usage preserved)");
+    console.log("🗑️ All cache cleared (API usage preserved)");
   }, []);
 
   const resetApiUsage = useCallback(() => {
@@ -806,6 +826,56 @@ export function useMLSProcessor() {
     addLog("🔄 API usage refreshed from storage", "info");
   }, [loadApiUsage, addLog]);
 
+  const clearAllCache = useCallback(() => {
+    const keys = Object.keys(localStorage);
+    let cacheCleared = 0;
+    keys.forEach((key) => {
+      if (key.startsWith("addr_") || key.startsWith("gemini_")) {
+        localStorage.removeItem(key);
+        cacheCleared++;
+      }
+    });
+    addLog(
+      `🗑️ Cache cleared: ${cacheCleared} cached results removed. Fresh API calls will be made.`,
+      "info"
+    );
+  }, [addLog]);
+
+  // Clear only Gemini cache for debugging
+  const clearGeminiCache = useCallback(() => {
+    const keys = Object.keys(localStorage);
+    let geminiCacheCleared = 0;
+    keys.forEach((key) => {
+      if (key.startsWith("gemini_") || key === GEMINI_CACHE_KEY) {
+        localStorage.removeItem(key);
+        geminiCacheCleared++;
+      }
+    });
+    addLog(
+      `🗑️ Gemini cache cleared: ${geminiCacheCleared} entries removed. Fresh Gemini calls will be made.`,
+      "info"
+    );
+  }, [addLog]);
+
+  const clearCacheForTesting = useCallback(() => {
+    // Clear all caches for testing
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(CACHE_KEY);
+    localStorage.removeItem(GEMINI_CACHE_KEY);
+    const keys = Object.keys(localStorage);
+    let cleared = 0;
+    keys.forEach((key) => {
+      if (key.startsWith("addr_") || key.startsWith("gemini_")) {
+        localStorage.removeItem(key);
+        cleared++;
+      }
+    });
+    addLog(
+      `🧪 Test cache clear: ${cleared} entries removed. Ready for fresh testing.`,
+      "info"
+    );
+  }, [addLog]);
+
   // Enhanced caching system
   const cacheAddressResult = useCallback(
     (address: string, result: ProcessedResult) => {
@@ -826,78 +896,6 @@ export function useMLSProcessor() {
     []
   );
 
-  // Cache specifically for Gemini results
-  const cacheGeminiResult = useCallback(
-    (
-      address: string,
-      city: string,
-      county: string,
-      result: {
-        success: boolean;
-        neighborhood?: string | null;
-        community?: string | null;
-        error?: string;
-      }
-    ) => {
-      try {
-        const env = process.env.NODE_ENV || "development";
-        const cacheKey = `gemini_${env}_${btoa(
-          `${address}_${city}_${county}`.toLowerCase().trim()
-        )}`;
-        localStorage.setItem(
-          cacheKey,
-          JSON.stringify({
-            result,
-            timestamp: Date.now(),
-            environment: env,
-          })
-        );
-        console.log(`💾 Gemini result cached for: ${address} (${env})`);
-      } catch (error) {
-        console.warn("⚠️ Gemini cache storage failed:", error);
-      }
-    },
-    []
-  );
-
-  const getCachedGeminiResult = useCallback(
-    (
-      address: string,
-      city: string,
-      county: string
-    ): {
-      success: boolean;
-      neighborhood?: string | null;
-      community?: string | null;
-      error?: string;
-    } | null => {
-      try {
-        const env = process.env.NODE_ENV || "development";
-        const cacheKey = `gemini_${env}_${btoa(
-          `${address}_${city}_${county}`.toLowerCase().trim()
-        )}`;
-        const cached = localStorage.getItem(cacheKey);
-        if (cached) {
-          const data = JSON.parse(cached);
-          // Cache valid for 7 days (Gemini results are more stable)
-          const daysOld = (Date.now() - data.timestamp) / (1000 * 60 * 60 * 24);
-          if (daysOld <= 7) {
-            console.log(
-              `📄 Using cached Gemini result for: ${address} (${env})`
-            );
-            return data.result;
-          } else {
-            localStorage.removeItem(cacheKey);
-          }
-        }
-      } catch (error) {
-        console.warn("⚠️ Gemini cache retrieval failed:", error);
-      }
-      return null;
-    },
-    []
-  );
-
   const getCachedAddressResult = useCallback(
     (address: string): ProcessedResult | null => {
       try {
@@ -905,9 +903,9 @@ export function useMLSProcessor() {
         const cached = localStorage.getItem(cacheKey);
         if (cached) {
           const data = JSON.parse(cached);
-          // Cache valid for 30 days
-          const daysOld = (Date.now() - data.timestamp) / (1000 * 60 * 60 * 24);
-          if (daysOld <= 30) {
+          // Cache valid for 24 hours (reduced from 30 days)
+          const hoursOld = (Date.now() - data.timestamp) / (1000 * 60 * 60);
+          if (hoursOld <= 24) {
             return data.result;
           } else {
             localStorage.removeItem(cacheKey);
@@ -1004,13 +1002,16 @@ export function useMLSProcessor() {
       city: string,
       county: string
     ): Promise<MapboxResult> => {
-      const fullAddress = `${address}, ${zip}, ${city}, ${county}`;
-      const encodedAddress = encodeURIComponent(fullAddress);
-      const apiKey = process.env.NEXT_PUBLIC_MAPBOX_API_KEY;
-
-      if (!apiKey) {
-        return { success: false, error: "Mapbox API key not configured" };
+      if (mapboxDisabled.current) {
+        addLog(
+          `🚫 Mapbox disabled after repeated 401 errors. Skipping for: ${address}`,
+          "warning"
+        );
+        return { success: false, error: "Mapbox disabled" };
       }
+      const fullAddress = [address, zip, city, county]
+        .filter(Boolean)
+        .join(", ");
 
       // Check API limit before making request
       if (!checkApiLimit("mapbox")) {
@@ -1021,101 +1022,77 @@ export function useMLSProcessor() {
         };
       }
 
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodedAddress}.json?access_token=${apiKey}&country=us&types=address&limit=1`;
-
       try {
         addLog(`🗺️ Geocoding with Mapbox: ${fullAddress}`, "info");
         setStats((prev) => ({
           ...prev,
           mapboxCount: prev.mapboxCount + 1,
         }));
+        const response = await fetch("/api/geocoding/mapbox", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address: fullAddress }),
+        });
 
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const json = await response.json();
+        if (!response.ok || json.error) {
+          throw new Error(json.error || `HTTP ${response.status}`);
         }
 
-        const data = await response.json();
-
-        // Update API usage tracking AFTER successful response
+        // Update usage después de éxito
         updateApiUsage("mapbox");
 
-        if (data.features && data.features.length > 0) {
-          const feature = data.features[0];
-          const props = feature.properties;
-          const coords = feature.geometry.coordinates;
-          const context = feature.context || [];
-
-          // Extract context information
-          let neighborhood = null;
-          let locality = null;
-          let place = null;
-          let district = null;
-          let region = null;
-          let postcode = null;
-          let country = null;
-
-          context.forEach((item: { id: string; text: string }) => {
-            const id = item.id;
-            if (id.startsWith("neighborhood")) neighborhood = item.text;
-            else if (id.startsWith("locality")) locality = item.text;
-            else if (id.startsWith("place")) place = item.text;
-            else if (id.startsWith("district")) district = item.text;
-            else if (id.startsWith("region")) region = item.text;
-            else if (id.startsWith("postcode")) postcode = item.text;
-            else if (id.startsWith("country")) country = item.text;
-          });
-
-          // Extract house number using the robust strategy from Mapbox-2.html
-          let house_number = null;
-          let street_name = null;
-
-          // Strategy 1: Extract from original address using regex
-          const addressMatch = fullAddress.match(/^(\d+)\s+(.+?)(?:,|$)/);
-          if (addressMatch) {
-            house_number = addressMatch[1];
-            street_name = addressMatch[2].trim();
+        // Usamos json.raw (respuesta completa de Mapbox en el route) si existe para extraer más contexto
+        let house_number: string | null = null;
+        let street_name: string | null = null;
+        if (json.formatted) {
+          const match = json.formatted.match(/^(\d+)\s+(.+?)(?:,|$)/);
+          if (match) {
+            house_number = match[1];
+            street_name = match[2].trim();
           }
-
-          // Strategy 2: If not found, try from Mapbox formatted response
-          if (!house_number) {
-            const formattedMatch = feature.place_name.match(
-              /^(\d+)\s+(.+?)(?:,|$)/
-            );
-            if (formattedMatch) {
-              house_number = formattedMatch[1];
-              street_name = formattedMatch[2].trim();
-            }
-          }
-
-          // Strategy 3: Use street name from feature.text if available
-          if (!street_name && feature.text && !feature.text.match(/^\d/)) {
-            street_name = feature.text;
-          }
-
-          return {
-            success: true as const,
-            formatted: feature.place_name,
-            latitude: coords[1],
-            longitude: coords[0],
-            neighborhood: neighborhood,
-            locality: locality,
-            place: place,
-            district: district,
-            region: region,
-            postcode: postcode,
-            country: country,
-            confidence: feature.relevance || null,
-            accuracy: props.accuracy || null,
-            mapbox_id: feature.id,
-            full_context: context,
-            "House Number": house_number,
-            street_name: street_name,
-          };
-        } else {
-          return { success: false as const, error: "No results found" };
         }
+        if (!house_number) {
+          const match2 = fullAddress.match(/^(\d+)\s+(.+?)(?:,|$)/);
+          if (match2) {
+            house_number = match2[1];
+            street_name = street_name || match2[2].trim();
+          }
+        }
+
+        return {
+          success: true,
+          formatted: json.formatted,
+          latitude: json.latitude,
+          longitude: json.longitude,
+          neighborhood: json.neighborhood || null,
+          "House Number": house_number,
+          street_name,
+        };
       } catch (error) {
+        if (
+          (error as Error).message.includes("CSP") ||
+          (error as Error).name === "TypeError"
+        ) {
+          addLog(
+            "⚠️ Mapbox fetch blocked (posible CSP). Usa endpoint interno confirmado.",
+            "warning"
+          );
+        }
+        if ((error as Error).message.includes("401")) {
+          mapbox401Count.current += 1;
+          addLog(
+            `🔐 Mapbox 401 (${mapbox401Count.current}) for ${address}. Token invalid or lacking scope?`,
+            "error"
+          );
+          if (mapbox401Count.current >= 3) {
+            mapboxDisabled.current = true;
+            addLog(
+              "🚫 Mapbox deshabilitado tras 3 errores 401 consecutivos. Usando Geocodio y Gemini únicamente.",
+              "warning"
+            );
+          }
+        }
         return { success: false as const, error: (error as Error).message };
       }
     },
@@ -1136,10 +1113,9 @@ export function useMLSProcessor() {
       city: string,
       county: string
     ): Promise<GeocodioResult> => {
-      const fullAddress = `${address}, ${zip}, ${city}, ${county}`;
-      const encodedAddress = encodeURIComponent(fullAddress);
-      const apiKey = process.env.NEXT_PUBLIC_GEOCODIO_API_KEY;
-      const url = `https://api.geocod.io/v1.7/geocode?q=${encodedAddress}&api_key=${apiKey}&fields=cd,census2020`;
+      const fullAddress = [address, zip, city, county]
+        .filter(Boolean)
+        .join(", ");
 
       // Check API limit before making request
       if (!checkApiLimit("geocodio")) {
@@ -1156,57 +1132,35 @@ export function useMLSProcessor() {
           ...prev,
           geocodioCount: prev.geocodioCount + 1,
         }));
-
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const response = await fetch("/api/geocoding/geocodio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address: fullAddress }),
+        });
+        const json = await response.json();
+        if (!response.ok || json.error) {
+          throw new Error(json.error || `HTTP ${response.status}`);
         }
-
-        const data = await response.json();
-
-        // Update API usage tracking AFTER successful response
         updateApiUsage("geocodio");
-
-        if (data.results && data.results.length > 0) {
-          const result = data.results[0];
-          const location = result.location;
-          const addressComponents = result.address_components;
-          const fields = result.fields || {};
-
-          return {
-            success: true as const,
-            formatted: result.formatted_address || fullAddress,
-            latitude: location.lat,
-            longitude: location.lng,
-            accuracy: result.accuracy,
-            accuracy_type: result.accuracy_type,
-            source: result.source,
-            // Address components
-            number: addressComponents.number || null,
-            predirectional: addressComponents.predirectional || null,
-            street: addressComponents.street || null,
-            suffix: addressComponents.suffix || null,
-            postdirectional: addressComponents.postdirectional || null,
-            city: addressComponents.city || null,
-            county: addressComponents.county || null,
-            state: addressComponents.state || null,
-            zip: addressComponents.zip || null,
-            // Census data if available
-            congressional_district:
-              fields.congressional_districts?.[0]?.district_number || null,
-            state_legislative_district:
-              fields.state_legislative_districts?.house?.district_number ||
-              null,
-            census_tract: fields.census?.census_tract_code || null,
-            census_block: fields.census?.block_code || null,
-            // For compatibility with existing code
-            "House Number": addressComponents.number || null,
-            neighbourhood: null, // Geocodio doesn't provide neighborhood data directly
-          };
-        } else {
-          return { success: false as const, error: "No results found" };
-        }
+        return {
+          success: true,
+          formatted: json.formatted || fullAddress,
+          latitude: json.latitude,
+          longitude: json.longitude,
+          accuracy: json.accuracy,
+          neighbourhood: json.neighborhood || null,
+          "House Number": json["House Number"] || null,
+        };
       } catch (error) {
+        if (
+          (error as Error).message.includes("CSP") ||
+          (error as Error).name === "TypeError"
+        ) {
+          addLog(
+            "⚠️ Geocodio fetch blocked (posible CSP). Usa endpoint interno confirmado.",
+            "warning"
+          );
+        }
         return { success: false as const, error: (error as Error).message };
       }
     },
@@ -1219,77 +1173,49 @@ export function useMLSProcessor() {
     ]
   );
 
-  // Get neighborhood from Gemini with optimized prompt and retry logic
+  // Get neighborhood from Gemini (enhanced) – avoids caching empty N/A-only responses
+  interface ExtendedGeminiContext {
+    neighborhood?: string | null;
+    city?: string;
+    county?: string;
+    zip?: string;
+    latitude?: number;
+    longitude?: number;
+    mode?: string;
+  }
   const getNeighborhoodFromGemini = useCallback(
     async (
       address: string,
+      zip: string,
       city: string,
-      county: string
+      county: string,
+      contextData?: ExtendedGeminiContext
     ): Promise<GeminiResult> => {
       const fullAddress = `${address}, ${city}, ${county}, FL`;
+      const cacheKey = `gemini_simple_${btoa(`${address}_${city}_${county}`.toLowerCase().trim())}`;
 
-      // Check cache first
-      const cachedResult = getCachedGeminiResult(address, city, county);
-      if (cachedResult) {
-        addLog(`📄 Using cached Gemini result for: ${address}`, "info");
-        // Convert cache result to proper type
-        if (cachedResult.success) {
-          return {
-            success: true as const,
-            neighborhood: cachedResult.neighborhood || null,
-            community: cachedResult.community || null,
-          };
-        } else {
-          return {
-            success: false as const,
-            error: cachedResult.error || "Unknown cached error",
-          };
+      // Cache lookup – drop empty successes
+      try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const cachedObj = JSON.parse(cached);
+          const ageMinutes = (Date.now() - cachedObj.timestamp) / (1000 * 60);
+          if (ageMinutes <= 30) {
+            const cr = cachedObj.result;
+            if (cr?.success === true && !cr.neighborhood && !cr.community) {
+              localStorage.removeItem(cacheKey); // purge useless
+            } else {
+              addLog(`📄 Using cached Gemini result for: ${address}`, "info");
+              return cr;
+            }
+          } else {
+            localStorage.removeItem(cacheKey);
+          }
         }
+      } catch (e) {
+        console.warn("Gemini cache read error", e);
       }
 
-      // PROMPT OPTIMIZADO BASADO EN GOOGLE AI STUDIO (exact copy from config.js)
-      const optimizedPrompt = `Rol: Eres un especialista en enriquecimiento de datos geográficos con acceso a registros de propiedad, mapas de vecindarios y bases de datos del MLS 2025 fecha actual.
-
-Objetivo: Para la dirección proporcionada, identifica y proporciona dos niveles específicos de información geográfica:
-
-DIRECCIÓN A ANALIZAR: ${fullAddress}
-
-Debes proporcionar:
-1. **Vecindario general**: Área geográfica amplia dentro de la ciudad (ej: "Kendall Green", "Ives Estates", "Ocean Breeze")
-2. **Subdivisión/Comunidad específica**: Desarrollo inmobiliario, subdivisión o comunidad específica (ej: "Kendall Lake", "Magnolia Gardens", "Pine Ridge At Delray Beach")
-
-INSTRUCCIONES ESPECÍFICAS:
-- Consulta bases de datos MLS 2025 fecha actual y registros de propiedad de Florida
-- Proporciona SOLO el nombre principal de la comunidad/vecindario, SIN sufijos como:
-  * NO incluir: "Sec 1", "Section 2", "Phase 1A", "6th Sec", "Unit 1", "Addition", "Plat 1"
-  * CORRECTO: "Highland Lakes" (NO "Highland Lakes Sec 1")
-  * CORRECTO: "Presidential Estates" (NO "Presidential Estates 2")
-  * CORRECTO: "Cresthaven" (NO "Cresthaven 6th Sec")
-- Usa nombres comerciales limpios y principales tal como aparecen en marketing inmobiliario
-- Si una dirección tiene múltiples opciones, selecciona la más conocida comercialmente
-- Si no tienes datos específicos para algún campo, usa exactamente "N/A" (no "No disponible", no "null", no "undefined")
-
-FORMATO DE RESPUESTA (JSON únicamente):
-{
-  "neighborhood": "nombre principal del vecindario general o N/A",
-  "community": "nombre principal de la subdivisión/comunidad específica o N/A"
-}
-
-Ejemplo de respuesta correcta:
-{
-  "neighborhood": "Kendall Green",
-  "community": "Kendall Lake"
-}
-
-Ejemplo cuando no hay datos:
-{
-  "neighborhood": "N/A",
-  "community": "N/A"
-}`;
-
-      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-
-      // Check API limit before making request
       if (!checkApiLimit("gemini")) {
         handleApiLimitReached("gemini");
         return {
@@ -1298,344 +1224,139 @@ Ejemplo cuando no hay datos:
         };
       }
 
-      // Retry configuration for free account - environment aware
-      const maxRetries = 3;
-      const baseDelay = isDevelopment ? 3000 : 6000; // 3s in dev, 6s in production
-
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const attempts = 3;
+      for (let attempt = 1; attempt <= attempts; attempt++) {
         try {
+          const baseCtxParts: string[] = [];
+          if (contextData?.neighborhood)
+            baseCtxParts.push(
+              `Neighborhood detectado: ${contextData.neighborhood}`
+            );
+          if (contextData?.city)
+            baseCtxParts.push(`Ciudad: ${contextData.city}`);
+          if (contextData?.county)
+            baseCtxParts.push(`Condado: ${contextData.county}`);
+          if (contextData?.zip) baseCtxParts.push(`ZIP: ${contextData.zip}`);
+          if (contextData?.latitude && contextData?.longitude)
+            baseCtxParts.push(
+              `Coords: ${contextData.latitude}, ${contextData.longitude}`
+            );
+          if (contextData?.mode === "community-only")
+            baseCtxParts.push(
+              "Modo: buscar SOLO comunidad/subdivision específica si existe"
+            );
+
+          const contextBase = baseCtxParts.join(" | ");
+          const reinforcedContext =
+            attempt === 1
+              ? contextBase
+              : `${contextBase} | Reintento ${attempt}: evita devolver 'N/A' en ambos campos; ofrece mejor candidato.`.trim();
+
           addLog(
-            `🤖 Consulting Gemini (attempt ${attempt}/${maxRetries}) for: ${fullAddress}`,
+            `🤖 Consulting Gemini (attempt ${attempt}/${attempts}) for: ${fullAddress}`,
             "info"
           );
           setStats((prev) => ({ ...prev, geminiCount: prev.geminiCount + 1 }));
 
-          const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: optimizedPrompt }] }],
-                generationConfig: {
-                  temperature: 0.1, // Más determinístico
-                  topK: 10,
-                  topP: 0.8,
-                  maxOutputTokens: 500, // Incrementado para respuestas más completas
-                  stopSequences: ["}"], // Detener después del JSON
-                },
-              }),
-            }
-          );
+          const response = await fetch("/api/geocoding/gemini", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              address: fullAddress,
+              context: reinforcedContext
+                ? `Context: ${reinforcedContext}`
+                : undefined,
+            }),
+          });
 
           if (!response.ok) {
             const errorText = await response.text();
-            console.error(
-              `❌ Gemini API Error (attempt ${attempt}):`,
-              response.status,
-              errorText
-            );
-
-            // Handle specific error codes
-            if (response.status === 503 || response.status === 429) {
-              // Service overloaded or rate limited - retry with exponential backoff
-              if (attempt < maxRetries) {
-                const delay = baseDelay * Math.pow(2, attempt - 1); // Exponential backoff
-                addLog(
-                  `⏳ Gemini overloaded, retrying in ${
-                    delay / 1000
-                  }s... (${attempt}/${maxRetries})`,
-                  "warning"
-                );
-                await new Promise((resolve) => setTimeout(resolve, delay));
-                continue; // Retry
-              } else {
-                // Max retries reached, cache the failure and skip Gemini
-                const failureResult = {
-                  success: false as const,
-                  error: `API overloaded after ${maxRetries} attempts`,
-                };
-                cacheGeminiResult(address, city, county, failureResult);
-                addLog(
-                  `⚠️ Gemini API overloaded after ${maxRetries} attempts, skipping for this address`,
-                  "warning"
-                );
-                return failureResult;
-              }
-            } else if (response.status === 400) {
-              // Bad request - don't retry, cache the failure
-              const errorResult = {
-                success: false as const,
-                error: `Bad request: ${errorText}`,
-              };
-              cacheGeminiResult(address, city, county, errorResult);
-              addLog(`❌ Gemini bad request: ${errorText}`, "error");
-              return errorResult;
-            } else {
-              // Other errors - don't retry
-              throw new Error(`HTTP ${response.status}: ${errorText}`);
+            if (attempt < attempts) {
+              const delay = 1500 * attempt;
+              addLog(
+                `⚠️ Gemini HTTP ${response.status}. Retrying in ${delay / 1000}s...`,
+                "warning"
+              );
+              await new Promise((r) => setTimeout(r, delay));
+              continue;
             }
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
           }
 
           const data = await response.json();
-          console.log(
-            "🤖 Gemini Full Response:",
-            JSON.stringify(data, null, 2)
-          );
+          console.log("🤖 Gemini Response:", data);
 
-          if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-            const text = data.candidates[0].content.parts[0].text.trim();
-            console.log("🤖 Gemini Raw Text:", text);
+          if (data.success === true) {
+            const rn = data.neighborhood?.trim();
+            const rc = data.community?.trim();
+            const neighborhood = rn && rn.toLowerCase() !== "n/a" ? rn : null;
+            const community = rc && rc.toLowerCase() !== "n/a" ? rc : null;
 
-            try {
-              // PARSING MEJORADO CON MÚLTIPLES ESTRATEGIAS (exact copy from config.js)
-              const cleanText = text
-                .replace(/```json\n?/g, "")
-                .replace(/```\n?/g, "")
-                .replace(/\n/g, " ")
-                .trim();
-
-              // Estrategia 1: Buscar JSON completo
-              const jsonMatch = cleanText.match(
-                /\{[^}]*"neighborhood"[^}]*"community"[^}]*\}/
+            if (!neighborhood && !community) {
+              addLog(
+                `⚠️ Gemini returned empty data (attempt ${attempt})`,
+                "warning"
               );
-
-              if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0]);
-
-                let neighborhood = parsed.neighborhood || null;
-                let community = parsed.community || null;
-
-                // Limpiar valores inválidos o genéricos
-                const invalidValues = [
-                  "no disponible",
-                  "n/a",
-                  "no data",
-                  "unknown",
-                  "no específico",
-                  "no encontrado",
-                  "not available",
-                  "null",
-                  "undefined",
-                  "",
-                ];
-
-                if (
-                  neighborhood &&
-                  typeof neighborhood === "string" &&
-                  invalidValues.some((invalid) =>
-                    neighborhood
-                      .toLowerCase()
-                      .trim()
-                      .includes(invalid.toLowerCase())
-                  )
-                ) {
-                  neighborhood = "N/A";
-                }
-
-                if (
-                  community &&
-                  typeof community === "string" &&
-                  invalidValues.some((invalid) =>
-                    community
-                      .toLowerCase()
-                      .trim()
-                      .includes(invalid.toLowerCase())
-                  )
-                ) {
-                  community = "N/A";
-                }
-
-                // Limpiar sufijos innecesarios de comunidades/vecindarios
-                const cleanCommunityName = (name: string): string => {
-                  if (!name) return name;
-
-                  // Patrones de sufijos a remover
-                  const suffixPatterns = [
-                    /\s+(Sec|Section)\s+\d+[A-Z]*/gi, // "Sec 1", "Section 2A"
-                    /\s+(Phase|Ph)\s+\d+[A-Z]*/gi, // "Phase 1A", "Ph 2B"
-                    /\s+\d+(st|nd|rd|th)\s+(Sec|Section)/gi, // "6th Sec", "1st Section"
-                    /\s+(Unit|Tract)\s+\d+[A-Z]*/gi, // "Unit 1", "Tract 2A"
-                    /\s+(Plat|Block)\s+\d+[A-Z]*/gi, // "Plat 1", "Block 2A"
-                    /\s+(Addition|Add)\s+\d*/gi, // "Addition 1", "Add"
-                    /\s+(Subdivision|Sub)\s+\d*/gi, // "Subdivision 1", "Sub"
-                    /\s+(Parcel|Lot)\s+\d+[A-Z]*/gi, // "Parcel 1A", "Lot 2B"
-                  ];
-
-                  let cleanName = name.trim();
-
-                  // Aplicar todos los patrones de limpieza
-                  suffixPatterns.forEach((pattern) => {
-                    cleanName = cleanName.replace(pattern, "");
-                  });
-
-                  // Limpiar espacios múltiples y trim final
-                  cleanName = cleanName.replace(/\s+/g, " ").trim();
-
-                  return cleanName;
-                };
-
-                // Aplicar limpieza a neighborhood y community
-                if (neighborhood) {
-                  neighborhood = cleanCommunityName(neighborhood);
-                }
-
-                if (community) {
-                  community = cleanCommunityName(community);
-                }
-
-                // Validar que tenemos al menos uno de los campos con datos válidos
-                if (
-                  (!neighborhood || neighborhood === "N/A") &&
-                  (!community || community === "N/A")
-                ) {
-                  const noDataResult = {
-                    success: false as const,
-                    error:
-                      "No se encontraron datos específicos de vecindario o comunidad",
-                  };
-                  cacheGeminiResult(address, city, county, noDataResult);
-                  return noDataResult;
-                }
-
-                const result = {
-                  success: true as const,
-                  neighborhood: neighborhood || "N/A",
-                  community: community || "N/A",
-                };
-
-                console.log("✅ Gemini Parsed Result:", result);
-                addLog(`✅ Gemini success on attempt ${attempt}`, "success");
-
-                // Update API usage tracking AFTER successful response
-                updateApiUsage("gemini");
-
-                // Cache successful result
-                cacheGeminiResult(address, city, county, result);
-                return result;
-              } else {
-                // Estrategia 2: Buscar patrones alternativos
-                const neighborhoodMatch = cleanText.match(
-                  /"neighborhood":\s*"([^"]+)"/
-                );
-                const communityMatch = cleanText.match(
-                  /"community":\s*"([^"]+)"/
-                );
-
-                if (neighborhoodMatch || communityMatch) {
-                  // Limpiar sufijos innecesarios de comunidades/vecindarios
-                  const cleanCommunityName = (name: string): string => {
-                    if (!name) return name;
-
-                    // Patrones de sufijos a remover
-                    const suffixPatterns = [
-                      /\s+(Sec|Section)\s+\d+[A-Z]*/gi, // "Sec 1", "Section 2A"
-                      /\s+(Phase|Ph)\s+\d+[A-Z]*/gi, // "Phase 1A", "Ph 2B"
-                      /\s+\d+(st|nd|rd|th)\s+(Sec|Section)/gi, // "6th Sec", "1st Section"
-                      /\s+(Unit|Tract)\s+\d+[A-Z]*/gi, // "Unit 1", "Tract 2A"
-                      /\s+(Plat|Block)\s+\d+[A-Z]*/gi, // "Plat 1", "Block 2A"
-                      /\s+(Addition|Add)\s+\d*/gi, // "Addition 1", "Add"
-                      /\s+(Subdivision|Sub)\s+\d*/gi, // "Subdivision 1", "Sub"
-                      /\s+(Parcel|Lot)\s+\d+[A-Z]*/gi, // "Parcel 1A", "Lot 2B"
-                    ];
-
-                    let cleanName = name.trim();
-
-                    // Aplicar todos los patrones de limpieza
-                    suffixPatterns.forEach((pattern) => {
-                      cleanName = cleanName.replace(pattern, "");
-                    });
-
-                    // Limpiar espacios múltiples y trim final
-                    cleanName = cleanName.replace(/\s+/g, " ").trim();
-
-                    return cleanName;
-                  };
-
-                  let neighborhood = neighborhoodMatch
-                    ? neighborhoodMatch[1]
-                    : null;
-                  let community = communityMatch ? communityMatch[1] : null;
-
-                  // Aplicar limpieza
-                  if (neighborhood) {
-                    neighborhood = cleanCommunityName(neighborhood);
-                  }
-
-                  if (community) {
-                    community = cleanCommunityName(community);
-                  }
-
-                  const result = {
-                    success: true as const,
-                    neighborhood: neighborhood,
-                    community: community,
-                  };
-                  addLog(`✅ Gemini success on attempt ${attempt}`, "success");
-
-                  // Update API usage tracking AFTER successful response
-                  updateApiUsage("gemini");
-
-                  // Cache successful result
-                  cacheGeminiResult(address, city, county, result);
-                  return result;
-                }
-
-                throw new Error("No se encontró JSON válido en la respuesta");
+              if (attempt < attempts) {
+                await new Promise((r) => setTimeout(r, 1200 * attempt));
+                continue;
               }
-            } catch (parseError) {
-              console.error("❌ Parse Error:", (parseError as Error).message);
-              console.error("❌ Raw text was:", text);
-
-              const parseErrorResult = {
-                success: false as const,
-                error: `Error de parsing: ${(parseError as Error).message}`,
+              return {
+                success: false,
+                error: "No neighborhood/community data after retries",
               };
-              cacheGeminiResult(address, city, county, parseErrorResult);
-              return parseErrorResult;
             }
+
+            const result: GeminiSuccessResult = {
+              success: true,
+              neighborhood,
+              community,
+            };
+            addLog(
+              `✅ Gemini success: N=${neighborhood || "N/A"}, C=${community || "N/A"}`,
+              "success"
+            );
+            updateApiUsage("gemini");
+            try {
+              localStorage.setItem(
+                cacheKey,
+                JSON.stringify({ result, timestamp: Date.now() })
+              );
+            } catch {}
+            return result;
           } else {
-            console.error("❌ Gemini response structure invalid:", data);
-            const invalidStructureResult = {
-              success: false as const,
-              error: "Estructura de respuesta de Gemini inválida",
-            };
-            cacheGeminiResult(address, city, county, invalidStructureResult);
-            return invalidStructureResult;
+            const errorMsg = data.error || "Gemini returned success:false";
+            if (attempt < attempts) {
+              addLog(`⏳ Gemini error: ${errorMsg}. Retrying...`, "warning");
+              await new Promise((r) => setTimeout(r, 1200 * attempt));
+              continue;
+            }
+            return { success: false as const, error: errorMsg };
           }
-        } catch (error) {
-          console.error(`❌ Gemini Error (attempt ${attempt}):`, error);
-          if (attempt === maxRetries) {
-            const finalErrorResult = {
-              success: false as const,
-              error: (error as Error).message,
-            };
-            cacheGeminiResult(address, city, county, finalErrorResult);
-            addLog(`❌ Gemini failed after ${maxRetries} attempts`, "error");
-            return finalErrorResult;
+        } catch (err) {
+          if (attempt < attempts) {
+            addLog(
+              `⏳ Gemini network/parse error: ${(err as Error).message}. Retrying...`,
+              "warning"
+            );
+            await new Promise((r) => setTimeout(r, 1500 * attempt));
+            continue;
           }
-          // Wait before retrying - environment aware delay
-          const retryDelay = isDevelopment ? 1500 : 3000;
-          await new Promise((resolve) => setTimeout(resolve, retryDelay));
+          return {
+            success: false as const,
+            error: `Final Gemini error: ${(err as Error).message}`,
+          };
         }
       }
-
-      // This should never be reached, but just in case
-      const unexpectedErrorResult = {
-        success: false as const,
-        error: "Unexpected error in retry loop",
-      };
-      cacheGeminiResult(address, city, county, unexpectedErrorResult);
-      return unexpectedErrorResult;
+      return { success: false as const, error: "Unexpected Gemini failure" };
     },
     [
       addLog,
-      getCachedGeminiResult,
-      cacheGeminiResult,
       checkApiLimit,
       updateApiUsage,
       handleApiLimitReached,
       apiUsage.geminiUsed,
+      setStats,
     ]
   );
 
@@ -1661,7 +1382,21 @@ Ejemplo cuando no hay datos:
           processed_at: new Date().toISOString(),
         };
 
-        // Step 1: Try Mapbox first (Primary for geocoding)
+        // Step 1: Check for cached complete result first
+        const cachedComplete = getCachedAddressResult(address);
+        if (cachedComplete) {
+          addLog(
+            `📄 Using cached complete result for: ${address} - N:${cachedComplete.neighborhoods} C:${cachedComplete.comunidades}`,
+            "info"
+          );
+          return {
+            ...cachedComplete,
+            ...addressData,
+            original_address: address,
+          };
+        }
+
+        // Step 2: Try Mapbox first (Primary for geocoding)
         addLog(`🔄 Step 1: Trying Mapbox for: ${address}`, "info");
         const mapboxResult = await geocodeWithMapbox(
           address,
@@ -1698,23 +1433,148 @@ Ejemplo cuando no hay datos:
               `🔄 Mapbox has neighborhood, using Gemini only for community data`,
               "info"
             );
-
-            const geminiResult = await getNeighborhoodFromGemini(
+            const primaryGeminiResult = await getNeighborhoodFromGemini(
               address,
+              zip,
               city,
-              county
+              county,
+              {
+                neighborhood: mapboxResult.neighborhood,
+                city,
+                county,
+                zip,
+                latitude: mapboxResult.latitude,
+                longitude: mapboxResult.longitude,
+              }
             );
 
-            if (geminiResult.success && "community" in geminiResult) {
-              result.comunidades = normalizeValue(geminiResult.community);
-              result.community_source =
-                normalizeValue(geminiResult.community) !== "N/A"
-                  ? "Gemini AI"
-                  : "N/A";
-              result.api_source = "Mapbox + Gemini";
+            let communityFound = false;
+            if (primaryGeminiResult.success) {
+              result.comunidades = normalizeValue(
+                primaryGeminiResult.community
+              );
+              if (result.comunidades !== "N/A") {
+                communityFound = true;
+                result.community_source = "Gemini AI";
+                result.api_source = "Mapbox + Gemini";
+              } else {
+                result.community_source = "N/A";
+                result.comunidades = "N/A";
+              }
             } else {
               result.comunidades = "N/A";
               result.community_source = "N/A";
+            }
+
+            // Fallback: segundo intento sólo para comunidad si no se obtuvo
+            if (!communityFound) {
+              addLog(
+                `🔁 Gemini fallback: intentando extraer comunidad específica (solo community)`,
+                "info"
+              );
+              const fallbackGemini = await getNeighborhoodFromGemini(
+                address,
+                zip,
+                city,
+                county,
+                {
+                  neighborhood: mapboxResult.neighborhood,
+                  mode: "community-only",
+                  city,
+                  county,
+                  zip,
+                  latitude: mapboxResult.latitude,
+                  longitude: mapboxResult.longitude,
+                }
+              );
+              if (fallbackGemini.success && fallbackGemini.community) {
+                const normalizedFallback = normalizeValue(
+                  fallbackGemini.community
+                );
+                if (normalizedFallback !== "N/A") {
+                  result.comunidades = normalizedFallback;
+                  result.community_source = "Gemini AI (Fallback)";
+                  result.api_source = "Mapbox + Gemini";
+                }
+              }
+
+              // Intento agresivo final si sigue N/A
+              if (
+                (!result.comunidades || result.comunidades === "N/A") &&
+                result.neighborhoods &&
+                result.neighborhoods !== "N/A"
+              ) {
+                try {
+                  addLog(
+                    `🧪 Gemini intento final agresivo comunidad para: ${address}`,
+                    "info"
+                  );
+                  const aggressiveResp = await fetch("/api/geocoding/gemini", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      address: `${address}, ${city}, ${county}, FL`,
+                      context: `Neighborhood detectado: ${result.neighborhoods}. SOLO responde el JSON pedido. Si existe una subdivision/comunidad comercial diferente al vecindario general proporciónala; si no, mantén 'N/A' en community pero NO inventes.`,
+                    }),
+                  });
+                  if (aggressiveResp.ok) {
+                    const agData = await aggressiveResp.json();
+                    if (
+                      agData.success === true &&
+                      agData.community &&
+                      String(agData.community).toLowerCase() !== "n/a"
+                    ) {
+                      const val = normalizeValue(agData.community);
+                      if (val !== "N/A") {
+                        result.comunidades = val;
+                        result.community_source = "Gemini AI (Aggressive)";
+                        result.api_source = "Mapbox + Gemini";
+                        addLog(
+                          `✅ Aggressive community extracción: ${val}`,
+                          "success"
+                        );
+                      }
+                    }
+                  }
+                } catch (e) {
+                  addLog(
+                    `⚠️ Aggressive community attempt error: ${(e as Error).message}`,
+                    "warning"
+                  );
+                }
+
+                // Heurística final: mapping manual + copia condicional
+                if (
+                  (!result.comunidades || result.comunidades === "N/A") &&
+                  result.neighborhoods &&
+                  result.neighborhoods !== "N/A"
+                ) {
+                  const manualMap: Record<string, string> = {
+                    // Ajusta según confirmaciones reales
+                    "Kendall Green": "Kendall Green",
+                    "Ocean Breeze": "Ocean Breeze Park",
+                  };
+                  const nh = result.neighborhoods.trim();
+                  let guess = manualMap[nh];
+                  // Si no está en el mapa pero parece nombre de subdivision (palabras clave)
+                  if (!guess) {
+                    const kw =
+                      /(gate|park|heights|lake|lakes|estates|ridge|harbor|harbour|village|villages|greens?|pines?)$/i;
+                    if (kw.test(nh)) {
+                      guess = nh; // usar mismo nombre
+                    }
+                  }
+                  if (guess && guess !== "N/A") {
+                    result.comunidades = guess;
+                    result.community_source = "Heuristic";
+                    result.api_source = "Mapbox + Heuristic";
+                    addLog(
+                      `🧩 Heurística comunidad asignada: ${guess} (desde neighborhood ${nh})`,
+                      "warning"
+                    );
+                  }
+                }
+              }
             }
 
             addLog(
@@ -1730,8 +1590,10 @@ Ejemplo cuando no hay datos:
 
             const geminiResult = await getNeighborhoodFromGemini(
               address,
+              zip,
               city,
-              county
+              county,
+              { neighborhood: mapboxResult.neighborhood }
             );
 
             if (geminiResult.success && "neighborhood" in geminiResult) {
@@ -1842,6 +1704,7 @@ Ejemplo cuando no hay datos:
       getNeighborhoodFromGemini,
       addLog,
       normalizeValue,
+      getCachedAddressResult,
     ]
   );
 
@@ -1923,112 +1786,100 @@ Ejemplo cuando no hay datos:
         setIsProcessing(true);
         shouldStopProcessing.current = false;
 
-        // Process each address starting from the appropriate index
+        // DEDUPLICATION: map normalized address -> indices
+        const normalized = (s: string) =>
+          s.toLowerCase().trim().replace(/\s+/g, " ");
+        const addressIndexMap = new Map<string, number[]>();
+        validAddresses.forEach((row, idx) => {
+          const addr = String(row[detectedCols.address!]);
+          const key = normalized(addr);
+          if (!addressIndexMap.has(key)) addressIndexMap.set(key, []);
+          addressIndexMap.get(key)!.push(idx);
+        });
+        addLog(
+          `🧬 Deduplicated ${validAddresses.length} -> ${addressIndexMap.size} direcciones únicas`,
+          "info"
+        );
+
+        const uniqueKeys = Array.from(addressIndexMap.keys());
         const results: ProcessedResult[] = [...existingResults];
+        results.length = validAddresses.length; // pre-allocate for placement
+        let processedUnique = 0;
         let successCount = existingResults.filter(
           (r) => r.status === "success"
         ).length;
 
-        for (let i = startIndex; i < validAddresses.length; i++) {
-          // Check if processing should stop
-          if (shouldStopProcessing.current) {
-            addLog("Processing stopped by user", "warning");
-            break;
-          }
+        // Worker pool
+        let cursor = startIndex;
+        const pending: Promise<void>[] = [];
 
-          const addressData = validAddresses[i];
-          const address = String(addressData[detectedCols.address!]);
-
-          // Update progress
-          setProgress({
-            current: i + 1,
-            total: validAddresses.length,
-            percentage: Math.round(((i + 1) / validAddresses.length) * 100),
-            currentAddress: address,
-          });
-
-          // Check cache first
-          let result = getCachedAddressResult(address);
-
-          if (result) {
-            // Use cached result
-            result = { ...result, ...addressData }; // Merge with original data
-            // Detect api_source and increment corresponding counter
-            let mapboxInc = 0,
-              geocodioInc = 0,
-              geminiInc = 0;
-            if (result.api_source) {
-              if (result.api_source.includes("Mapbox")) mapboxInc = 1;
-              if (result.api_source.includes("Geocodio")) geocodioInc = 1;
-              if (result.api_source.includes("Gemini")) geminiInc = 1;
+        const launchNext = (): Promise<void> => {
+          if (shouldStopProcessing.current) return Promise.resolve();
+          if (cursor >= uniqueKeys.length) return Promise.resolve();
+          const uniqueKey = uniqueKeys[cursor++];
+          const firstIndex = addressIndexMap.get(uniqueKey)![0];
+          const row = validAddresses[firstIndex];
+          const run = async () => {
+            const addr = String(row[detectedCols.address!]);
+            setProgress({
+              current: processedUnique + 1,
+              total: uniqueKeys.length,
+              percentage: Math.round(
+                ((processedUnique + 1) / uniqueKeys.length) * 100
+              ),
+              currentAddress: addr,
+            });
+            let result = getCachedAddressResult(addr);
+            if (result) {
+              result = { ...result, ...row };
+            } else {
+              result = await processAddress(row, detectedCols);
+              if (result.status === "success") cacheAddressResult(addr, result);
             }
+            // Assign result to all duplicate indices
+            addressIndexMap.get(uniqueKey)!.forEach((idx) => {
+              results[idx] = { ...result!, ...validAddresses[idx] };
+            });
+            if (result.status === "success")
+              successCount += addressIndexMap.get(uniqueKey)!.length;
+            processedUnique++;
             setStats((prev) => ({
               ...prev,
-              totalProcessed: i + 1,
-              successRate: `${Math.round((successCount / (i + 1)) * 100)}%`,
-              mapboxCount: prev.mapboxCount + mapboxInc,
-              geocodioCount: prev.geocodioCount + geocodioInc,
-              geminiCount: prev.geminiCount + geminiInc,
+              totalProcessed: processedUnique,
+              successRate: `${Math.round((successCount / validAddresses.length) * 100)}%`,
             }));
-            addLog(
-              `📄 Using cached result for: ${address}${
-                result.api_source ? ` | Source: ${result.api_source}` : ""
-              }`,
-              "info"
-            );
-          } else {
-            // Process address normally
-            result = await processAddress(addressData, detectedCols);
-
-            // Cache successful results
-            if (result.status === "success") {
-              cacheAddressResult(address, result);
+            setResults([...results]);
+            if (processedUnique % SAVE_INTERVAL === 0) {
+              saveProgress(
+                results.filter(Boolean) as ProcessedResult[],
+                processedUnique,
+                validAddresses.length,
+                file.name,
+                stats,
+                detectedCols,
+                validAddresses
+              );
+              addLog(
+                `💾 Auto-saved (pool) ${processedUnique}/${uniqueKeys.length}`,
+                "info"
+              );
             }
-          }
+            // Schedule next after delay to respect pacing
+            await new Promise((r) => setTimeout(r, DELAY_BETWEEN_REQUESTS));
+          };
+          return run()
+            .catch((e) =>
+              addLog(`❌ Error pool: ${(e as Error).message}`, "error")
+            )
+            .finally(() => {})
+            .then(() => launchNext());
+        };
 
-          results.push(result);
-
-          if (result.status === "success") {
-            successCount++;
-          }
-
-          // Si el resultado NO es cacheado, actualiza stats como antes
-          if (!result || !getCachedAddressResult(address)) {
-            const newStats = {
-              ...currentStats,
-              totalProcessed: i + 1,
-              successRate: `${Math.round((successCount / (i + 1)) * 100)}%`,
-            };
-            setStats(newStats);
-          }
-
-          // Add to results immediately for real-time display
-          setResults([...results]);
-
-          // Auto-save progress every SAVE_INTERVAL records
-          if ((i + 1) % SAVE_INTERVAL === 0) {
-            saveProgress(
-              results,
-              i + 1,
-              validAddresses.length,
-              file.name,
-              stats,
-              detectedCols,
-              validAddresses
-            );
-            addLog(
-              `💾 Auto-saved at ${i + 1}/${validAddresses.length}`,
-              "info"
-            );
-          }
-
-          // Delay between requests
-          if (i < validAddresses.length - 1) {
-            await new Promise((resolve) =>
-              setTimeout(resolve, DELAY_BETWEEN_REQUESTS)
-            );
-          }
+        // Start initial workers
+        for (let i = 0; i < CONCURRENCY_LIMIT && i < uniqueKeys.length; i++) {
+          pending.push(launchNext());
         }
+        await Promise.all(pending);
 
         if (!shouldStopProcessing.current) {
           addLog(
@@ -2120,12 +1971,12 @@ Ejemplo cuando no hay datos:
       ...results.map((result) =>
         [
           `"${
-            result["ML#"] ||
-            result["MLS#"] ||
-            result["MLSNumber"] ||
-            result["MLS Number"] ||
-            result["ListingID"] ||
-            result["Listing ID"] ||
+            result?.["ML#"] ??
+            result?.["MLS#"] ??
+            result?.["MLSNumber"] ??
+            result?.["MLS Number"] ??
+            result?.["ListingID"] ??
+            result?.["Listing ID"] ??
             ""
           }"`,
           `"${
@@ -2237,27 +2088,45 @@ Ejemplo cuando no hay datos:
 
     const csvContent = [
       headers.join(","),
-      ...recoveryData.results.map((result) =>
-        [
-          `"${
-            result["ML#"] ||
-            result["MLS#"] ||
-            result["MLSNumber"] ||
-            result["MLS Number"] ||
-            result["ListingID"] ||
-            result["Listing ID"] ||
-            ""
-          }"`,
+      ...recoveryData.results.map((result) => {
+        if (!result) {
+          return [
+            '""',
+            '""',
+            '""',
+            '""',
+            '""',
+            '""',
+            "",
+            "",
+            '"N/A"',
+            '"N/A"',
+            '"N/A"',
+            '"N/A"',
+            "",
+            '""',
+          ]; // defensive empty row
+        }
+        const mlId =
+          result?.["ML#"] ||
+          result?.["MLS#"] ||
+          result?.["MLSNumber"] ||
+          result?.["MLS Number"] ||
+          result?.["ListingID"] ||
+          result?.["Listing ID"] ||
+          "";
+        return [
+          `"${mlId}"`,
           `"${
             result.original_address ||
-            result["Address"] ||
-            result["Internet Display"] ||
+            result?.["Address"] ||
+            result?.["Internet Display"] ||
             ""
           }"`,
-          `"${result["Zip Code"] || ""}"`,
-          `"${result["City Name"] || ""}"`,
-          `"${result["County"] || ""}"`,
-          `"${result["House Number"] || ""}"`,
+          `"${result?.["Zip Code"] || ""}"`,
+          `"${result?.["City Name"] || ""}"`,
+          `"${result?.["County"] || ""}"`,
+          `"${result?.["House Number"] || ""}"`,
           result.latitude || "",
           result.longitude || "",
           `"${result.neighborhoods || "N/A"}"`,
@@ -2266,8 +2135,8 @@ Ejemplo cuando no hay datos:
           `"${result.community_source || "N/A"}"`,
           result.status || "",
           `"${result.api_source || ""}"`,
-        ].join(",")
-      ),
+        ].join(",");
+      }),
     ].join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -2349,6 +2218,9 @@ Ejemplo cuando no hay datos:
     apiLimits: API_LIMITS,
     resetApiUsage,
     refreshApiUsage,
+    clearAllCache,
+    clearGeminiCache,
+    clearCacheForTesting,
     // Recovery functions
     showRecoveryDialog,
     setShowRecoveryDialog,

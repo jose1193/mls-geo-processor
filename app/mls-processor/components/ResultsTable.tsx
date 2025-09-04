@@ -186,87 +186,112 @@ export function ResultsTable({
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {currentResults.map((result, index) => (
-                <tr
-                  key={startIndex + index}
-                  className="hover:bg-gray-50 transition-colors"
-                >
-                  <td className="px-4 py-4 text-sm text-gray-900 font-medium text-center">
-                    {result["ML#"] || "N/A"}
-                  </td>
-                  <td
-                    className="px-4 py-4 text-sm text-gray-900 truncate text-center"
-                    title={String(
-                      result["Address"] || result.original_address || "N/A"
-                    )}
+              {currentResults.map((result, index) => {
+                // Defensive: handle any undefined entries that might appear due to pre-allocation
+                if (!result) {
+                  return (
+                    <tr key={startIndex + index} className="bg-red-50">
+                      <td
+                        colSpan={12}
+                        className="px-4 py-4 text-sm text-red-700 text-center font-medium"
+                      >
+                        ⚠️ Missing result data (index {startIndex + index})
+                      </td>
+                    </tr>
+                  );
+                }
+                const mlId =
+                  result?.["ML#"] ||
+                  result?.["MLS#"] ||
+                  result?.["MLSNumber"] ||
+                  result?.["MLS Number"] ||
+                  result?.["ListingID"] ||
+                  result?.["Listing ID"] ||
+                  "N/A";
+                return (
+                  <tr
+                    key={startIndex + index}
+                    className="hover:bg-gray-50 transition-colors"
                   >
-                    {result["Address"] || result.original_address || "N/A"}
-                  </td>
-                  <td className="px-4 py-4 text-sm text-gray-900 text-center">
-                    {result["Zip Code"] || "N/A"}
-                  </td>
-                  <td className="px-4 py-4 text-sm text-gray-900 text-center">
-                    {result["City Name"] || "N/A"}
-                  </td>
-                  <td className="px-4 py-4 text-sm text-gray-900 text-center">
-                    {result["County"] || "N/A"}
-                  </td>
-                  <td className="px-4 py-4 text-sm text-gray-900 text-center">
-                    {result["House Number"] || "N/A"}
-                  </td>
-                  <td className="px-4 py-4 text-sm text-gray-900 font-mono text-center">
-                    {result.latitude?.toFixed(6) || "N/A"}
-                  </td>
-                  <td className="px-4 py-4 text-sm text-gray-900 font-mono text-center">
-                    {result.longitude?.toFixed(6) || "N/A"}
-                  </td>
-                  <td
-                    className="px-4 py-4 text-sm truncate text-center"
-                    title={result.neighborhoods || "N/A"}
-                  >
-                    <span
-                      className={
-                        result.neighborhoods
-                          ? "text-green-600 font-semibold"
-                          : "text-gray-400"
-                      }
+                    <td className="px-4 py-4 text-sm text-gray-900 font-medium text-center">
+                      {mlId}
+                    </td>
+                    <td
+                      className="px-4 py-4 text-sm text-gray-900 truncate text-center"
+                      title={String(
+                        result?.["Address"] || result.original_address || "N/A"
+                      )}
                     >
-                      {result.neighborhoods || "N/A"}
-                    </span>
-                  </td>
-                  <td
-                    className="px-4 py-4 text-sm truncate text-center"
-                    title={result.comunidades || "N/A"}
-                  >
-                    <span
-                      className={
-                        result.comunidades
-                          ? "text-green-600 font-semibold"
-                          : "text-gray-400"
-                      }
+                      {result?.["Address"] || result.original_address || "N/A"}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-gray-900 text-center">
+                      {result?.["Zip Code"] || "N/A"}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-gray-900 text-center">
+                      {result?.["City Name"] || "N/A"}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-gray-900 text-center">
+                      {result?.["County"] || "N/A"}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-gray-900 text-center">
+                      {result?.["House Number"] || "N/A"}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-gray-900 font-mono text-center">
+                      {result.latitude?.toFixed(6) || "N/A"}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-gray-900 font-mono text-center">
+                      {result.longitude?.toFixed(6) || "N/A"}
+                    </td>
+                    <td
+                      className="px-4 py-4 text-sm truncate text-center"
+                      title={result.neighborhoods || "N/A"}
                     >
-                      {result.comunidades || "N/A"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-sm text-center">
-                    <span
-                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        result.status === "success"
-                          ? "bg-green-100 text-green-800"
-                          : "bg-red-100 text-red-800"
-                      }`}
+                      <span
+                        className={
+                          result.neighborhoods
+                            ? "text-green-600 font-semibold"
+                            : "text-gray-400"
+                        }
+                      >
+                        {result.neighborhoods || "N/A"}
+                      </span>
+                    </td>
+                    <td
+                      className="px-4 py-4 text-sm truncate text-center"
+                      title={result.comunidades || "N/A"}
                     >
-                      {result.status === "success" ? "✅ Success" : "❌ Error"}
-                    </span>
-                  </td>
-                  <td
-                    className="px-4 py-4 text-sm text-gray-900 truncate text-center"
-                    title={result.api_source || "N/A"}
-                  >
-                    {result.api_source || "N/A"}
-                  </td>
-                </tr>
-              ))}
+                      <span
+                        className={
+                          result.comunidades
+                            ? "text-green-600 font-semibold"
+                            : "text-gray-400"
+                        }
+                      >
+                        {result.comunidades || "N/A"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-sm text-center">
+                      <span
+                        className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          result.status === "success"
+                            ? "bg-green-100 text-green-800"
+                            : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        {result.status === "success"
+                          ? "✅ Success"
+                          : "❌ Error"}
+                      </span>
+                    </td>
+                    <td
+                      className="px-4 py-4 text-sm text-gray-900 truncate text-center"
+                      title={result.api_source || "N/A"}
+                    >
+                      {result.api_source || "N/A"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

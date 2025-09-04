@@ -1,0 +1,998 @@
+Ya veo lo que pasa: tu cuello de botella no es solo “Vercel Hobby” sino también cómo y dónde estás procesando esos 100.000 elementos.
+
+Te explico el porqué y luego te propongo un plan para que procese mucho más rápido.
+
+1️⃣ Problemas principales
+Plan Hobby en Vercel
+
+1 GB de memoria y 125 MB de ejecución por función.
+
+Funciones serverless con cold start y límite de 10 segundos de CPU (si usas Edge Functions, menos aún).
+
+Sin procesamiento en paralelo masivo: cada request se ejecuta de forma aislada.
+
+LocalStorage como backup/cache
+
+El localStorage es solo del navegador, no sirve para trabajo pesado ni acceso concurrente.
+
+Si la app baja 100 000 items “uno por uno” y los guarda en localStorage, todo el trabajo es secuencial y lento.
+
+Llamadas a Gemini
+
+La API de Gemini tiene latencia por request.
+
+Si llamas a la API en serie, el tiempo se multiplica por cada ítem.
+
+Diferencia localhost vs Vercel
+
+Localhost puede procesar más rápido porque no tiene límites de CPU/memoria de serverless.
+
+En Vercel, cada request es una ejecución aislada y se reinicia.
+
+2️⃣ Estrategias para acelerar
+A. Procesamiento en lotes (batching)
+En lugar de procesar 1 ítem → 1 llamada a Gemini, agrupa:
+
+50 o 100 ítems en un solo prompt a Gemini.
+
+Gemini soporta prompts con JSON y listas, y luego tú procesas la respuesta en bloque.
+
+Esto reduce drásticamente el número de llamadas.
+
+Ejemplo:
+
+js
+Copiar
+Editar
+const batchSize = 50;
+for (let i = 0; i < data.length; i += batchSize) {
+  const batch = data.slice(i, i + batchSize);
+  await callGemini(batch); // procesa todos en una sola llamada
+}
+B. Procesamiento asíncrono y paralelo controlado
+Usa Promise.allSettled para procesar varios lotes a la vez, pero limita la concurrencia (para no saturar la API ni tu plan de Vercel).
+
+Puedes usar p-queue o Bottleneck para manejar esto.
+
+bash
+Copiar
+Editar
+npm install bottleneck
+js
+Copiar
+Editar
+import Bottleneck from "bottleneck";
+
+const limiter = new Bottleneck({ maxConcurrent: 5, minTime: 200 });
+data.forEach(item => limiter.schedule(() => callGemini(item)));
+C. Cambiar almacenamiento
+En vez de localStorage, usa Vercel KV (Redis), Supabase, Upstash Redis, o PlanetScale/MySQL para cachear resultados.
+
+Así puedes procesar en segundo plano y luego servir la data ya procesada, en lugar de recalcular siempre.
+
+D. Procesar fuera de Vercel
+El plan Hobby no es bueno para tareas pesadas.
+
+Lo ideal: dejar Vercel para servir la web y usar un worker externo:
+
+Cloudflare Workers + Durable Objects
+
+Railway.app, Render, o Fly.io para jobs en segundo plano
+
+Supabase Edge Functions si ya usas Supabase
+
+Con esto, puedes ejecutar el procesamiento continuo sin que el usuario espere.
+
+E. Caching agresivo
+Cachear tanto en el lado del servidor (KV/Redis) como en el cliente.
+
+Si ya procesaste un Neighborhood, no volver a llamar a Gemini.
+
+💡 Resumen optimizado
+
+Agrupa en lotes grandes para llamar menos veces a Gemini.
+
+Procesa en paralelo controlado con bottleneck.
+
+Guarda resultados en Redis/Supabase en vez de localStorage.
+
+Mueve el procesamiento a un servicio separado de Vercel Hobby.
+
+Si quieres, puedo armarte un flujo ejemplo donde proceses los 100.000 ítems en lotes de 50 usando Gemini y Redis, y que la web solo muestre datos ya procesados, sin que el usuario espere el cálculo en vivo. Así pasarías de “1 en 1 lento” a “miles por minuto en segundo plano”.
+
+¿Quieres que te arme ese flujo optimizado?
+
+Dijiste:
+Si uso Supabase base de datos plan gratis 
+ChatGPT dijo:
+Perfecto, usar Supabase (plan gratis) es una mejora grande frente a localStorage porque te da:
+
+PostgreSQL en la nube → guardar y consultar todos los Neighborhoods/Communities sin perderlos al cerrar el navegador.
+
+Edge Functions → puedes procesar datos de forma programada o desde el servidor, sin exponer tu API Key de Gemini al cliente.
+
+Realtime → la web puede actualizarse cuando un lote termina de procesarse.
+
+Pero ojo, el plan gratis de Supabase también tiene límites que hay que respetar.
+
+1️⃣ Límites del plan gratis de Supabase (aprox. a 2025)
+500 MB de base de datos.
+
+500 MB de almacenamiento de archivos.
+
+200 000 filas máximo.
+
+50 000 llamadas a la base de datos/mes.
+
+500 000 Edge Function invocations/mes.
+
+Sin “schedulers” automáticos (los puedes simular con un cron externo como GitHub Actions o Railway).
+
+Para tu caso de 100 000 registros/mes:
+
+Cabe en la base (si cada fila es ligera).
+
+Pero las llamadas a la DB podrían ser un cuello si no haces batch inserts/selects.
+
+2️⃣ Flujo recomendado con Supabase
+Paso 1: Guardar la fuente de datos en bruto
+Inserta todos los Neighborhoods y Communities en una tabla pending_items (sin procesar).
+
+Ejemplo tabla:
+
+sql
+Copiar
+Editar
+CREATE TABLE pending_items (
+  id bigint generated always as identity primary key,
+  name text not null,
+  status text default 'pending',
+  gemini_result jsonb,
+  created_at timestamptz default now()
+);
+Paso 2: Procesar en lotes con Edge Function
+Crea una Edge Function en Supabase que:
+
+Seleccione LIMIT 50 registros con status = 'pending'.
+
+Envíe esos 50 a Gemini en una sola llamada.
+
+Actualice la tabla con el resultado y status = 'done'.
+
+js
+Copiar
+Editar
+import { createClient } from "@supabase/supabase-js";
+import fetch from "node-fetch";
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+export async function processBatch() {
+  const { data: items } = await supabase
+    .from("pending_items")
+    .select("*")
+    .eq("status", "pending")
+    .limit(50);
+
+  if (!items.length) return;
+
+  const prompt = buildGeminiPrompt(items.map(i => i.name));
+  const geminiResponse = await callGemini(prompt);
+
+  // Actualizar en batch
+  for (let i = 0; i < items.length; i++) {
+    await supabase
+      .from("pending_items")
+      .update({ status: "done", gemini_result: geminiResponse[i] })
+      .eq("id", items[i].id);
+  }
+}
+Paso 3: Lanzar procesamiento sin bloquear la web
+El frontend solo pide datos con status = 'done'.
+
+El procesamiento corre desde:
+
+Tu máquina local con un script.
+
+Un cron job en GitHub Actions / Railway / Fly.io que llama la Edge Function cada minuto.
+
+Así evitas que Vercel procese directamente.
+
+Paso 4: Cache y rendimiento
+Si ya tienes un registro procesado, no vuelves a pedirlo a Gemini.
+
+Puedes usar Supabase Realtime para que el frontend se actualice automáticamente cuando lleguen nuevos resultados.
+
+✅ Ventajas sobre tu enfoque actual:
+
+Procesamiento en segundo plano → no bloquea la experiencia del usuario.
+
+Persistencia real (no depende del navegador).
+
+Llamadas a Gemini optimizadas en lotes.
+
+Escalable hasta que necesites un plan de pago.
+
+Si quieres, puedo prepararte un diagrama del flujo Supabase + Gemini para que veas cómo conectar todo y no chocar con los límites gratis.
+
+¿Quieres que te lo arme?
+
+Dijiste:
+Pero no quiero guardar 100000 filas solo guardar un archivo csv 
+ChatGPT dijo:
+Vale, entonces si tu idea es no llenar la base de datos con 100 000 filas y solo guardar un CSV con todo el procesamiento, el flujo se puede simplificar bastante y evitarte problemas de límites.
+
+Te propongo algo adaptado a tu caso:
+
+1️⃣ Cómo sería el flujo con Supabase y un solo CSV
+En vez de insertar fila por fila:
+
+Frontend (Vercel) solo envía o sube el archivo CSV crudo a Supabase Storage (plan gratis te da 500 MB).
+
+Una Edge Function en Supabase:
+
+Descarga el CSV.
+
+Lo procesa en lotes (ej. 50 registros por llamada a Gemini).
+
+Genera un nuevo CSV procesado.
+
+Guarda el CSV final en Supabase Storage.
+
+El frontend descarga directamente ese archivo ya procesado.
+
+2️⃣ Ventajas de hacerlo así
+Solo 2 archivos en el Storage: el original y el final → cero problemas con 100 000 filas en la base.
+
+No dependes de localStorage (más rápido y no limitado al navegador).
+
+Lotes en Edge Function → más rápido que 1×1.
+
+Procesamiento asíncrono → el usuario no espera en la web.
+
+3️⃣ Ejemplo de procesamiento en Edge Function
+Supongamos que subes input.csv y quieres output.csv:
+
+js
+Copiar
+Editar
+import { createClient } from "@supabase/supabase-js";
+import Papa from "papaparse";
+import fs from "fs/promises";
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+export async function processCSV() {
+  // 1. Descargar CSV original
+  const { data, error } = await supabase.storage
+    .from("my-bucket")
+    .download("input.csv");
+
+  if (error) throw error;
+
+  const csvText = await data.text();
+  const parsed = Papa.parse(csvText, { header: true });
+
+  // 2. Procesar en lotes
+  const batchSize = 50;
+  const results = [];
+
+  for (let i = 0; i < parsed.data.length; i += batchSize) {
+    const batch = parsed.data.slice(i, i + batchSize);
+    const processed = await callGemini(batch); // tu función
+    results.push(...processed);
+  }
+
+  // 3. Convertir a CSV final
+  const finalCsv = Papa.unparse(results);
+
+  // 4. Subir CSV final
+  await supabase.storage
+    .from("my-bucket")
+    .upload("output.csv", new Blob([finalCsv]), {
+      contentType: "text/csv",
+      upsert: true,
+    });
+}
+4️⃣ Flujo para el usuario final
+Subes input.csv a través de la web (guardado en Storage).
+
+Edge Function se activa (manual o vía cron) y genera output.csv.
+
+El usuario descarga output.csv ya procesado.
+
+💡 Con este modelo:
+
+No tocas 100 000 filas en la base → evitas límites.
+
+Solo 2 archivos → almacenamiento mínimo.
+
+Procesas mucho más rápido con lotes y control de concurrencia.
+
+El plan gratis de Supabase alcanza sin problema.
+
+Si quieres, puedo hacerte un flujo optimizado con lotes + control de concurrencia para que el CSV de 100 000 filas se procese en menos tiempo, incluso en plan gratis.
+¿Quieres que te lo arme así?
+
+Dijiste:
+Si por favor , osea subo el csv con las 12 columnas 100000 rows y completa luego neightbourhood y comunidad ?
+ChatGPT dijo:
+Perfecto, ya lo entendí bien:
+
+Entrada → input.csv con 12 columnas y 100 000 filas.
+
+Algunas columnas ya tienen datos, pero las columnas "Neighborhood" y "Comunidad" están vacías.
+
+Queremos que Gemini las complete.
+
+Salida → output.csv con todas las 12 columnas y las dos que faltaban ya completadas.
+
+Voy a plantearte un flujo 100% optimizado para plan gratis de Supabase y que procese rápido aunque tengas 100 000 filas.
+
+🔹 Arquitectura propuesta
+java
+Copiar
+Editar
+Frontend (Vercel)
+   ↓ sube archivo CSV
+Supabase Storage (input.csv)
+   ↓ Edge Function procesa en lotes (50-100 filas)
+Gemini API (completa datos)
+   ↓ Edge Function genera CSV final
+Supabase Storage (output.csv)
+   ↓ usuario descarga
+🔹 Optimización para velocidad
+Procesamiento por lotes: 50–100 filas por request a Gemini.
+
+Concurrencia controlada: hasta 5 lotes en paralelo usando Bottleneck para no pasarte de límites ni saturar la API.
+
+Un solo guardado: no se escribe fila por fila, sino que se genera todo el CSV final en memoria y se guarda una vez.
+
+CSV parsing rápido: usar papaparse o fast-csv para leer/escribir sin cargar todo en RAM de golpe.
+
+🔹 Ejemplo de Edge Function en Supabase
+js
+Copiar
+Editar
+// supabase/functions/process-csv/index.js
+import { createClient } from "@supabase/supabase-js";
+import Papa from "papaparse";
+import Bottleneck from "bottleneck";
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+// Límite: 5 lotes a la vez, 1 seg entre cada request por lote
+const limiter = new Bottleneck({ maxConcurrent: 5, minTime: 1000 });
+
+async function callGemini(batch) {
+  // Aquí armas el prompt para Gemini
+  const prompt = `Completa Neighborhood y Comunidad para estas filas: ${JSON.stringify(batch)}`;
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" + process.env.GEMINI_API_KEY, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }]
+    })
+  });
+  const data = await res.json();
+  // Aquí deberías mapear la respuesta al formato correcto
+  return data; 
+}
+
+export async function processCSV() {
+  // 1. Descargar CSV
+  const { data: file } = await supabase.storage
+    .from("csv-bucket")
+    .download("input.csv");
+
+  const text = await file.text();
+  const parsed = Papa.parse(text, { header: true });
+  
+  const results = [];
+  const batchSize = 50;
+
+  // 2. Procesar en lotes
+  const promises = [];
+  for (let i = 0; i < parsed.data.length; i += batchSize) {
+    const batch = parsed.data.slice(i, i + batchSize);
+    promises.push(limiter.schedule(() => callGemini(batch)));
+  }
+
+  const processedBatches = await Promise.all(promises);
+  
+  // 3. Reconstruir CSV final
+  processedBatches.forEach(batch => results.push(...batch));
+  const finalCsv = Papa.unparse(results);
+
+  // 4. Subir archivo final
+  await supabase.storage
+    .from("csv-bucket")
+    .upload("output.csv", new Blob([finalCsv]), {
+      contentType: "text/csv",
+      upsert: true
+    });
+
+  return { status: "done", total: results.length };
+}
+🔹 Flujo de uso
+Frontend (Vercel) → formulario para subir input.csv a Supabase Storage.
+
+Botón “Procesar” → llama a la Edge Function processCSV().
+
+Esperar notificación → puedes guardar un “status.json” en Storage para que el frontend sepa si terminó.
+
+Descargar output.csv desde Storage.
+
+🔹 Ventajas de este método
+No metes 100 000 filas en la base → evitas límites gratis.
+
+Procesas miles de filas por minuto gracias al batching y concurrencia.
+
+Separas subida, procesamiento y descarga → el usuario no bloquea su navegador.
+
+Escalable → si mañana quieres moverlo a Railway o Cloud Run, el código casi no cambia.
+
+Si quieres, puedo prepararte el diagrama visual paso a paso de este flujo para que lo tengas claro antes de implementarlo y no pierdas tiempo probando al azar.
+¿Quieres que te lo haga?
+
+Dijiste:
+En realidad uso mapbox y gémini mapbox ofrece algunos neightbourhood y sino géminis completa 
+ChatGPT dijo:
+Ah, vale, ahora lo tengo clarísimo:
+Tu CSV ya tiene direcciones o coordenadas → Mapbox intenta darte el neighborhood (barrio) → si Mapbox no lo devuelve, entonces usas Gemini para “inventar/completar” el dato.
+
+Eso cambia el flujo porque ahora no procesas TODO con Gemini, sino solo los casos que Mapbox deja vacíos.
+Esto es clave para acelerar muchísimo y ahorrar tokens de Gemini.
+
+🔹 Flujo optimizado con Mapbox + Gemini + CSV
+Subes input.csv (12 columnas, 100k filas) a Supabase Storage.
+
+Edge Function lee el CSV y procesa cada fila:
+
+Llama a Mapbox Geocoding API (batch o individual).
+
+Si Mapbox devuelve neighborhood → lo guarda.
+
+Si NO devuelve barrio → mete la fila en un batch para Gemini.
+
+Gemini procesa solo las filas faltantes en lotes de 50–100.
+
+La función reconstruye el CSV final (output.csv) con todas las columnas completas.
+
+Se guarda en Storage para descarga.
+
+🔹 Ejemplo pseudo-código
+js
+Copiar
+Editar
+import { createClient } from "@supabase/supabase-js";
+import Papa from "papaparse";
+import Bottleneck from "bottleneck";
+import fetch from "node-fetch";
+
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+const mapboxToken = process.env.MAPBOX_TOKEN;
+const geminiKey = process.env.GEMINI_API_KEY;
+
+const limiterGemini = new Bottleneck({ maxConcurrent: 5, minTime: 1000 });
+
+async function getNeighborhoodFromMapbox(lat, lon) {
+  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?types=neighborhood&access_token=${mapboxToken}`;
+  const res = await fetch(url);
+  const json = await res.json();
+  const feature = json.features?.[0];
+  return feature ? feature.text : null;
+}
+
+async function callGemini(batch) {
+  const prompt = `Completa el barrio y comunidad para las siguientes filas:\n${JSON.stringify(batch)}`;
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    }
+  );
+  const data = await res.json();
+  return data; // aquí parseas a tu formato
+}
+
+export async function processCSV() {
+  // 1. Descargar CSV
+  const { data: file } = await supabase.storage
+    .from("csv-bucket")
+    .download("input.csv");
+
+  const text = await file.text();
+  const parsed = Papa.parse(text, { header: true });
+  const rows = parsed.data;
+
+  // 2. Procesar primero con Mapbox
+  const missing = [];
+  for (let row of rows) {
+    const neighborhood = await getNeighborhoodFromMapbox(row.lat, row.lon);
+    if (neighborhood) {
+      row.neighborhood = neighborhood;
+    } else {
+      missing.push(row);
+    }
+  }
+
+  // 3. Procesar los que faltan con Gemini (en lotes)
+  const batchSize = 50;
+  for (let i = 0; i < missing.length; i += batchSize) {
+    const batch = missing.slice(i, i + batchSize);
+    const completed = await limiterGemini.schedule(() => callGemini(batch));
+    // Combinar resultados con filas originales
+    // ...
+  }
+
+  // 4. Guardar CSV final
+  const finalCsv = Papa.unparse(rows);
+  await supabase.storage
+    .from("csv-bucket")
+    .upload("output.csv", new Blob([finalCsv]), {
+      contentType: "text/csv",
+      upsert: true
+    });
+
+  return { status: "done" };
+}
+🔹 Ventajas de este flujo
+Gemini solo procesa una fracción de los 100k registros → mucho más rápido y barato.
+
+Mapbox hace la mayor parte del trabajo (y su API es muy rápida).
+
+El CSV completo se genera solo al final, no bloqueas la web.
+
+Compatible con plan gratis de Supabase.
+
+Si quieres, puedo hacerte un diagrama visual paso a paso de este proceso Mapbox → Gemini → CSV, para que veas dónde optimizar concurrencia y llamadas.
+Así tendrías claro cómo implementarlo en Edge Functions sin que se caiga por límite de memoria o tiempo.
+
+¿Quieres que te prepare ese diagrama?
+
+Dijiste:
+Si
+ChatGPT dijo:
+Perfecto, aquí tienes el diagrama paso a paso del flujo Mapbox → Gemini → CSV pensado para tu caso con 100 000 filas y plan gratis de Supabase.
+
+📊 Diagrama de flujo
+java
+Copiar
+Editar
+[Frontend en Vercel]
+      │
+      ▼
+1️⃣ Subida del archivo CSV (100k filas, 12 columnas)
+      │
+      ▼
+[Supabase Storage: "input.csv"]
+      │
+      ▼
+2️⃣ Edge Function inicia procesamiento
+      │
+      ├── Lee CSV por streaming (para no cargar todo en RAM)
+      │
+      ▼
+3️⃣ Para cada fila:
+      ├── Llama a Mapbox Geocoding API (con lat/lon)
+      │       │
+      │       ├── Si Mapbox devuelve neighborhood:
+      │       │       → Guarda en memoria temporal
+      │       │
+      │       └── Si NO devuelve neighborhood:
+      │               → Añade fila a lista "pendientes"
+      │
+      ▼
+4️⃣ Al terminar Mapbox:
+      ├── Lista "pendientes" se divide en lotes de 50–100
+      ├── Se procesan en paralelo controlado (Bottleneck)
+      ├── Cada lote se envía a Gemini para completar:
+      │       - neighborhood
+      │       - comunidad
+      │
+      ▼
+5️⃣ Combinar resultados de Mapbox + Gemini
+      │
+      ▼
+6️⃣ Reconstruir CSV final en memoria (PapaParse o fast-csv)
+      │
+      ▼
+[Supabase Storage: "output.csv"]
+      │
+      ▼
+7️⃣ Frontend recibe link de descarga del CSV completo
+🔹 Notas importantes del diseño
+Streaming de CSV
+
+Evita leer 100 000 filas de golpe en memoria.
+
+Con fast-csv o PapaParse en modo stream puedes ir procesando línea por línea.
+
+Mapbox primero, Gemini después
+
+Gemini solo toca los casos donde Mapbox falla → gran ahorro.
+
+Puedes cachear resultados de Mapbox en un objeto temporal para evitar repeticiones.
+
+Bottleneck para Gemini
+
+Controla concurrencia (ej. maxConcurrent: 5) para evitar que se agote el tiempo de la Edge Function.
+
+Evita saturar la API de Gemini y reduce riesgo de bloqueos.
+
+Salida directa a Storage
+
+No devuelves el CSV en la respuesta de la función (sería enorme).
+
+Guardas el archivo final en Storage y devuelves la URL.
+
+Frontend no bloqueante
+
+El usuario sube el archivo y luego recibe un mensaje de “procesando”.
+
+Puede refrescar y descargar el resultado cuando esté listo.
+
+Si quieres, puedo ahora pasarte el código base real de una Edge Function que haga este flujo tal cual, con PapaParse en streaming y llamadas a Mapbox + Gemini, listo para que lo pegues en Supabase.
+
+¿Quieres que te lo arme?
+
+Dijiste:
+OK y se crea una tabla para guardar la URL del archivo output o storage es aparte ? 
+ChatGPT dijo:
+El Storage de Supabase es totalmente independiente de las tablas de la base de datos,
+pero puedes crear una tabla para registrar el historial de archivos y así tener control de:
+
+Quién subió el archivo (si hay usuarios autenticados).
+
+Cuándo se subió.
+
+Estado de procesamiento (pending, processing, done, error).
+
+URL pública o firmada del output.csv.
+
+📦 Cómo quedaría
+1. Storage
+
+Carpeta uploads/ → input.csv originales.
+
+Carpeta outputs/ → output.csv procesados.
+
+2. Tabla en Postgres (processed_files)
+
+sql
+Copiar
+Editar
+CREATE TABLE processed_files (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users(id),
+  input_path text NOT NULL,
+  output_path text,
+  status text DEFAULT 'pending',
+  total_rows integer,
+  created_at timestamptz DEFAULT now(),
+  completed_at timestamptz
+);
+🔹 Flujo con registro
+Usuario sube input.csv al Storage (uploads/).
+
+El backend crea una fila en processed_files con:
+
+status = 'pending'
+
+input_path = 'uploads/...'
+
+Edge Function procesa el archivo.
+
+Cuando termina:
+
+Sube output.csv a Storage (outputs/).
+
+Actualiza la fila:
+
+sql
+Copiar
+Editar
+UPDATE processed_files
+SET status = 'done',
+    output_path = 'outputs/...',
+    completed_at = now()
+WHERE id = '...';
+El frontend consulta esta tabla para mostrar:
+
+Estado del archivo.
+
+Botón de descarga cuando está listo.
+
+💡 Ventaja de este enfoque:
+
+Si algún procesamiento falla, puedes reintentar solo ese archivo.
+
+Puedes llevar un historial de trabajos por usuario.
+
+No tienes que buscar manualmente en Storage cuál es el archivo final.
+
+Si quieres, puedo prepararte el código de Edge Function que:
+
+Guarda en Storage.
+
+Registra en tabla processed_files.
+
+Procesa Mapbox + Gemini.
+
+Actualiza la fila con la URL final.
+
+Así tendrías todo el pipeline cerrado.
+¿Quieres que lo monte así?
+
+Dijiste:
+Tengo todo es next js no uso backend aparte
+ChatGPT dijo:
+Perfecto, dado que estás usando Next.js y no tienes un backend aparte, podemos aprovechar las API Routes de Next.js para manejar la lógica de procesamiento de los archivos directamente desde el frontend. Las API Routes en Next.js permiten crear endpoints que se ejecutan en el servidor, por lo que puedes implementar toda la funcionalidad sin necesidad de configurar un backend adicional.
+
+Te voy a mostrar cómo implementar este flujo directamente en Next.js con API Routes. Aquí vamos a usar Supabase para el almacenamiento de archivos y la base de datos, y vamos a procesar el archivo CSV directamente desde la API de Next.js.
+
+Pasos para hacerlo en Next.js
+Subida del archivo CSV a Supabase Storage
+
+Registrar la tarea en la base de datos
+
+Procesar el archivo con Mapbox y Gemini
+
+Actualizar la base de datos con la URL del archivo procesado
+
+1. Crear la tabla en Supabase para registrar los archivos procesados
+Primero, crea la tabla en Supabase para registrar los archivos procesados:
+
+sql
+Copiar
+Editar
+CREATE TABLE processed_files (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users(id),
+  input_path text NOT NULL,
+  output_path text,
+  status text DEFAULT 'pending',
+  total_rows integer,
+  created_at timestamptz DEFAULT now(),
+  completed_at timestamptz
+);
+2. Crear la API Route en Next.js para manejar la subida y procesamiento
+En tu proyecto de Next.js, crea un archivo para la API en la ruta pages/api/process-csv.js. Esta API manejará:
+
+La subida del archivo CSV al Storage de Supabase.
+
+La creación de un registro en la tabla processed_files.
+
+El procesamiento del CSV, completando los datos de Neighborhood con Mapbox y Gemini.
+
+La actualización del registro en la base de datos con la URL del archivo procesado.
+
+Aquí está el código:
+
+js
+Copiar
+Editar
+// pages/api/process-csv.js
+import { createClient } from "@supabase/supabase-js";
+import Papa from "papaparse";
+import Bottleneck from "bottleneck";
+import fs from "fs";
+import path from "path";
+import fetch from "node-fetch";
+
+// Crear cliente de Supabase
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+const mapboxToken = process.env.MAPBOX_TOKEN;
+const geminiKey = process.env.GEMINI_API_KEY;
+
+// Límite para controlar la concurrencia
+const limiterGemini = new Bottleneck({ maxConcurrent: 5, minTime: 1000 });
+
+async function getNeighborhoodFromMapbox(lat, lon) {
+  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?types=neighborhood&access_token=${mapboxToken}`;
+  const res = await fetch(url);
+  const json = await res.json();
+  const feature = json.features?.[0];
+  return feature ? feature.text : null;
+}
+
+async function callGemini(batch) {
+  const prompt = `Completa el barrio y comunidad para las siguientes filas:\n${JSON.stringify(batch)}`;
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    }
+  );
+  const data = await res.json();
+  return data; // Aquí procesas la respuesta de Gemini
+}
+
+export async function handler(req, res) {
+  if (req.method === "POST") {
+    try {
+      // 1. Subir archivo CSV al Storage de Supabase
+      const file = req.files.file; // El archivo subido desde el frontend
+
+      // Subir archivo al Storage
+      const { data: fileData, error: fileError } = await supabase.storage
+        .from("csv-bucket")
+        .upload(`uploads/${file.name}`, file.data, {
+          contentType: file.mimetype,
+        });
+
+      if (fileError) throw fileError;
+
+      const filePath = fileData.path;
+
+      // 2. Crear entrada en la base de datos
+      const { data: dbRecord, error: dbError } = await supabase
+        .from("processed_files")
+        .insert([
+          {
+            input_path: filePath,
+            status: "pending", // Estado inicial
+            total_rows: 0, // Se actualizará después del procesamiento
+          },
+        ]);
+
+      if (dbError) throw dbError;
+
+      const recordId = dbRecord[0].id;
+
+      // 3. Procesar el archivo CSV
+      const text = file.data.toString();
+      const parsed = Papa.parse(text, { header: true });
+      const rows = parsed.data;
+
+      const missing = [];
+
+      for (let row of rows) {
+        const neighborhood = await getNeighborhoodFromMapbox(row.lat, row.lon);
+        if (neighborhood) {
+          row.neighborhood = neighborhood;
+        } else {
+          missing.push(row);
+        }
+      }
+
+      // 4. Procesar las filas restantes con Gemini
+      const batchSize = 50;
+      for (let i = 0; i < missing.length; i += batchSize) {
+        const batch = missing.slice(i, i + batchSize);
+        const completed = await limiterGemini.schedule(() => callGemini(batch));
+        // Aquí agregas el resultado a las filas procesadas
+        completed.forEach((result, idx) => {
+          missing[i + idx].neighborhood = result.neighborhood;
+        });
+      }
+
+      // 5. Reconstruir el CSV final
+      const finalCsv = Papa.unparse(rows.concat(missing));
+      
+      // Subir archivo procesado al Storage
+      const { data: outputData, error: outputError } = await supabase.storage
+        .from("csv-bucket")
+        .upload(`outputs/output_${recordId}.csv`, Buffer.from(finalCsv), {
+          contentType: "text/csv",
+        });
+
+      if (outputError) throw outputError;
+
+      const outputFilePath = outputData.path;
+
+      // 6. Actualizar la entrada en la base de datos con la URL del archivo procesado
+      const { error: updateError } = await supabase
+        .from("processed_files")
+        .update({
+          status: "done",
+          output_path: outputFilePath,
+          completed_at: new Date(),
+        })
+        .eq("id", recordId);
+
+      if (updateError) throw updateError;
+
+      // Enviar respuesta con la URL del archivo procesado
+      res.status(200).json({
+        message: "File processed successfully",
+        outputUrl: `${process.env.SUPABASE_URL}/storage/v1/object/public/csv-bucket/outputs/${outputFilePath}`,
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "An error occurred during processing" });
+    }
+  } else {
+    res.status(405).json({ error: "Method Not Allowed" });
+  }
+}
+3. Frontend para subir el archivo y ver el resultado
+En el frontend (en una página o componente de Next.js), puedes crear un formulario para subir el archivo y luego mostrar el estado del procesamiento y la URL de descarga del archivo procesado.
+
+js
+Copiar
+Editar
+import { useState } from "react";
+
+function FileUpload() {
+  const [file, setFile] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [downloadUrl, setDownloadUrl] = useState(null);
+
+  const handleFileChange = (e) => {
+    setFile(e.target.files[0]);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!file) {
+      alert("Please select a file");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    setStatus("Processing...");
+
+    try {
+      const response = await fetch("/api/process-csv", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setStatus("Done");
+        setDownloadUrl(data.outputUrl);
+      } else {
+        setStatus("Error");
+        console.error(data.error);
+      }
+    } catch (error) {
+      setStatus("Error");
+      console.error(error);
+    }
+  };
+
+  return (
+    <div>
+      <h1>Upload CSV</h1>
+      <form onSubmit={handleSubmit}>
+        <input type="file" onChange={handleFileChange} />
+        <button type="submit">Upload</button>
+      </form>
+      {status && <p>{status}</p>}
+      {downloadUrl && (
+        <a href={downloadUrl} target="_blank" rel="noopener noreferrer">
+          Download Processed File
+        </a>
+      )}
+    </div>
+  );
+}
+
+export default FileUpload;
+4. Consideraciones adicionales
+Seguridad: Asegúrate de que tu aplicación esté segura usando middleware de autenticación en Next.js si deseas restringir el acceso solo a usuarios registrados.
+
+Errores de Mapbox y Gemini: Si la API de Mapbox o Gemini devuelve errores o resultados vacíos, asegúrate de manejar esos casos correctamente.
+
+Uso de archivos grandes: Si el archivo CSV es muy grande, considera usar streaming y no cargar todo el archivo en memoria.
+
+Este flujo está optimizado para Next.js + Supabase sin backend adicional, todo se maneja directamente con las API Routes y el almacenamiento de Supabase. ¿Te gustaría que te ayudara a ajustar algún detalle?
+

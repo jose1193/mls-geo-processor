@@ -1,0 +1,311 @@
+/* Animación para las cards de features en page.tsx */
+.animate-zoom {
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  z-index: 2;
+}
+.animate-zoom:hover {
+  transform: scale(1.07);
+  z-index: 10;
+}
+/* Modern glassmorphism card for feature grid */
+.glass-card {
+  background: rgba(34, 197, 94, 0.12); /* subtle green tint */
+  border: 1.5px solid rgba(34, 197, 94, 0.18);
+  box-shadow:
+    0 8px 32px 0 rgba(34, 197, 94, 0.12),
+    0 1.5px 8px 0 rgba(109, 40, 217, 0.1);
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
+  border-radius: 18px;
+  transition:
+    box-shadow 0.3s,
+    border 0.3s;
+}
+.glass-card:hover {
+  box-shadow:
+    0 12px 40px 0 rgba(109, 40, 217, 0.18),
+    0 2px 12px 0 rgba(34, 197, 94, 0.18);
+  border: 2px solid rgba(109, 40, 217, 0.22);
+}
+/* Gradient animated text with glow for h2 */
+.gradient-glow-text {
+  /* Animated green gradient with animated text-shadow (no glow) */
+  background: linear-gradient(135deg, #14532d 0%, #065f46 40%, #6d28d9 100%);
+  background-size: 300% 300%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: gradientGlowMove 6s ease-in-out infinite;
+  /* No text-shadow for a clean look */
+}
+
+@keyframes gradientGlowMove {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes textShadowAnim {
+  /* Animation removed: no text-shadow needed */
+}
+
+@keyframes gradient-glow-move {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+/* Morphing underline animation for h2 */
+.morph-underline-bar {
+  background: linear-gradient(90deg, #a78bfa 0%, #34d399 100%);
+  border-radius: 4px;
+  animation: morph-underline 2.2s infinite alternate;
+}
+
+@keyframes morph-underline {
+  0% {
+    height: 4px;
+    background-position: 0 0;
+  }
+  50% {
+    height: 8px;
+    background-position: 100% 0;
+  }
+  100% {
+    height: 4px;
+    background-position: 0 0;
+  }
+}
+/* Shimmer effect for main titles */
+.shimmer-title {
+  position: relative;
+  background: linear-gradient(90deg, #a78bfa 0%, #fff 50%, #a78bfa 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-title 2.5s linear infinite;
+}
+
+@keyframes shimmer-title {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
+}
+
+/* Neon glow for cards and table */
+
+.neon-card {
+  box-shadow:
+    0 0 8px 1px #a78bfa88,
+    0 0 16px 4px #7c3aed22;
+  border: 2px solid #a78bfa88;
+  transition:
+    box-shadow 0.4s,
+    border-color 0.4s;
+}
+.neon-card:hover {
+  box-shadow:
+    0 0 16px 4px #c4b5fd88,
+    0 0 24px 8px #a78bfa55;
+  border-color: #c4b5fd88;
+}
+
+.neon-table {
+  box-shadow:
+    0 0 6px 1px #a78bfa88,
+    0 0 12px 2px #7c3aed22;
+  border-top: 2px solid #a78bfa88;
+  transition:
+    box-shadow 0.4s,
+    border-top-color 0.4s;
+}
+.neon-table:hover {
+  box-shadow:
+    0 0 16px 4px #c4b5fd88,
+    0 0 24px 8px #a78bfa55;
+  border-top-color: #c4b5fd88;
+}
+/* Custom purple scrollbar for results table */
+.results-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #a78bfa #2d2250;
+}
+
+.results-scrollbar::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+  background: #2d2250;
+  border-radius: 8px;
+}
+.results-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #a78bfa 40%, #7c3aed 100%);
+  border-radius: 8px;
+}
+.results-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, #c4b5fd 40%, #a78bfa 100%);
+}
+/* Modern File Input Button */
+.glass-button-blue {
+  background: #2563eb !important;
+  border-color: rgba(59, 130, 246, 0.8);
+  color: white !important;
+  box-shadow: 0 4px 15px 0 rgba(59, 130, 246, 0.4);
+}
+
+.glass-button-blue:hover {
+  background: #1d4ed8 !important;
+  border-color: rgba(59, 130, 246, 1);
+  box-shadow: 0 8px 25px 0 rgba(59, 130, 246, 0.6);
+}
+/* Glassmorphism Styles - Enhanced for Dark Background */
+.glass-button {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  transition: all 0.3s ease-in-out;
+  box-shadow: 0 4px 15px 0 rgba(0, 0, 0, 0.3);
+  position: relative;
+  overflow: hidden;
+  border-width: 1.5px;
+  border-style: solid;
+}
+
+.glass-button::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  transition: left 0.5s;
+}
+
+.glass-button:hover::before {
+  left: 100%;
+}
+
+.glass-button:hover {
+  transform: translateY(-3px) scale(1.03);
+  border-width: 2px;
+}
+
+.glass-button:active {
+  transform: translateY(-1px) scale(0.98);
+}
+
+.glass-button:disabled {
+  transform: none;
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.2);
+}
+
+.glass-button:disabled::before {
+  display: none;
+}
+
+/* Green Glassmorphic Button - Enhanced */
+.glass-button-green {
+  background: #16a34a !important; /* bg-green-600 */
+  border-color: rgba(34, 197, 94, 0.8);
+  color: white !important;
+  box-shadow: 0 4px 15px 0 rgba(34, 197, 94, 0.4);
+}
+
+.glass-button-green:hover {
+  background: #15803d !important; /* bg-green-700 */
+  border-color: rgba(34, 197, 94, 1);
+  box-shadow: 0 8px 25px 0 rgba(34, 197, 94, 0.6);
+}
+
+/* Red Glassmorphic Button - Enhanced */
+.glass-button-red {
+  background: #dc2626 !important; /* bg-red-600 */
+  border-color: rgba(239, 68, 68, 0.8);
+  color: white !important;
+  box-shadow: 0 4px 15px 0 rgba(239, 68, 68, 0.4);
+}
+
+.glass-button-red:hover {
+  background: #b91c1c !important; /* bg-red-700 */
+  border-color: rgba(239, 68, 68, 1);
+  box-shadow: 0 8px 25px 0 rgba(239, 68, 68, 0.6);
+}
+
+/* Blue Glassmorphic Button - Enhanced */
+.glass-button-blue {
+  background: #2563eb !important; /* bg-blue-600 */
+  border-color: rgba(59, 130, 246, 0.8);
+  color: white !important;
+  box-shadow: 0 4px 15px 0 rgba(59, 130, 246, 0.4);
+}
+
+.glass-button-blue:hover {
+  background: #1d4ed8 !important; /* bg-blue-700 */
+  border-color: rgba(59, 130, 246, 1);
+  box-shadow: 0 8px 25px 0 rgba(59, 130, 246, 0.6);
+}
+
+/* Orange Glassmorphic Button - Enhanced */
+.glass-button-orange {
+  background: #f97316 !important; /* bg-orange-500 */
+  border-color: rgba(249, 115, 22, 0.8);
+  color: white !important;
+  box-shadow: 0 4px 15px 0 rgba(249, 115, 22, 0.4);
+}
+
+.glass-button-orange:hover {
+  background: #ea580c !important; /* bg-orange-600 */
+  border-color: rgba(249, 115, 22, 1);
+  box-shadow: 0 8px 25px 0 rgba(249, 115, 22, 0.6);
+}
+
+/* Gray Glassmorphic Button - Enhanced */
+.glass-button-gray {
+  background: #374151 !important; /* bg-gray-700 */
+  border-color: rgba(156, 163, 175, 0.8);
+  color: white !important;
+  box-shadow: 0 4px 15px 0 rgba(156, 163, 175, 0.4);
+}
+
+.glass-button-gray:hover {
+  background: #1f2937 !important; /* bg-gray-800 */
+  border-color: rgba(156, 163, 175, 1);
+  box-shadow: 0 8px 25px 0 rgba(156, 163, 175, 0.6);
+}
+
+/* Shimmer animation for completed progress */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s infinite;
+}

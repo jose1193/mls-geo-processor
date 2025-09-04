@@ -1,121 +1,235 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import Image from "next/image";
-import Link from "next/link";
+
+const loginSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+});
+
+type LoginForm = z.infer<typeof loginSchema>;
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
+  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
 
-        {/* MLS Processor Link */}
-        <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6 w-full max-w-md">
-          <h2 className="text-xl font-bold text-blue-800 mb-2">
+  // Show message if redirected from protected route
+  const redirectMessage = searchParams.get("callbackUrl")
+    ? "Please sign in to access this page"
+    : null;
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginForm>({
+    resolver: zodResolver(loginSchema),
+  });
+
+  const onSubmit = async (data: LoginForm) => {
+    setIsLoading(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setMessage({
+          type: "success",
+          text: "Code sent to your email. Please check your inbox.",
+        });
+
+        // Redirect to verification page after 2 seconds
+        setTimeout(() => {
+          router.push(
+            `/auth/verify?email=${encodeURIComponent(data.email)}&callbackUrl=${encodeURIComponent(callbackUrl)}`
+          );
+        }, 2000);
+      } else {
+        setMessage({
+          type: "error",
+          text: result.error || "Error sending code",
+        });
+      }
+    } catch {
+      setMessage({
+        type: "error",
+        text: "Connection error. Please try again.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-blue-900 mb-3">
             🌍 MLS Processor
-          </h2>
-          <p className="text-blue-600 text-sm mb-4">
+          </h1>
+          <p className="text-lg text-blue-700 mb-2">
+            Real Estate Data Processing System
+          </p>
+          <p className="text-sm text-blue-600">
             Geographic enrichment system for real estate data processing
           </p>
-          <Link
-            href="/mls-processor"
-            className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-          >
-            Open MLS Processor →
-          </Link>
         </div>
 
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+        {/* Login Form */}
+        <div className="bg-white rounded-2xl shadow-xl p-8 border border-blue-100">
+          <div className="text-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              Welcome Back
+            </h2>
+            <p className="text-gray-600">
+              Enter your email to receive an access code
+            </p>
+            {redirectMessage && (
+              <p className="text-sm text-orange-600 mt-2">{redirectMessage}</p>
+            )}
+          </div>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="your-email@example.com"
+                disabled={isLoading}
+                {...register("email")}
+                className={errors.email ? "border-red-500" : ""}
+              />
+              {errors.email && (
+                <p className="text-sm text-red-600">{errors.email.message}</p>
+              )}
+            </div>
+
+            {message && (
+              <div
+                className={`p-3 rounded-lg text-sm ${
+                  message.type === "success"
+                    ? "bg-green-50 text-green-700 border border-green-200"
+                    : "bg-red-50 text-red-700 border border-red-200"
+                }`}
+              >
+                {message.text}
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              className="w-full transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98]"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <div className="flex items-center justify-center">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                  Sending code...
+                </div>
+              ) : (
+                "Send access code"
+              )}
+            </Button>
+          </form>
+
+          <div className="text-center mt-6">
+            <div className="flex items-center justify-center space-x-2 text-sm text-gray-500">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path
+                  fillRule="evenodd"
+                  d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 116 0z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <span>Secure passwordless authentication</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="text-center mt-8 space-y-4">
+          <div className="flex items-center justify-center space-x-6 text-xs text-blue-600">
+            <a
+              href="https://nextjs.org/learn"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-blue-800 transition-colors flex items-center gap-1"
+            >
+              <Image
+                src="/file.svg"
+                alt="File icon"
+                width={12}
+                height={12}
+                className="opacity-60"
+              />
+              Learn
+            </a>
+            <a
+              href="https://vercel.com/templates?framework=next.js"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-blue-800 transition-colors flex items-center gap-1"
+            >
+              <Image
+                src="/window.svg"
+                alt="Window icon"
+                width={12}
+                height={12}
+                className="opacity-60"
+              />
+              Examples
+            </a>
+            <a
+              href="https://nextjs.org"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-blue-800 transition-colors flex items-center gap-1"
+            >
+              <Image
+                src="/globe.svg"
+                alt="Globe icon"
+                width={12}
+                height={12}
+                className="opacity-60"
+              />
+              Next.js
+            </a>
+          </div>
+
+          <div className="flex items-center justify-center space-x-2">
+            <span className="text-xs text-gray-400">Powered by</span>
             <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+              src="/next.svg"
+              alt="Next.js logo"
+              width={60}
+              height={12}
+              className="opacity-40"
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </div>
     </div>
   );
 }
