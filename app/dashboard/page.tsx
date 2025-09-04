@@ -198,7 +198,7 @@ export default function DashboardPage() {
 
         {/* Stats Overview */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="bg-white shadow-lg border-0 hover:shadow-xl transition-shadow duration-300">
+          <Card className="bg-white shadow-lg border-0 hover:shadow-2xl hover:-translate-y-2 hover:scale-105 transition-all duration-300 cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-gray-600">
                 Total Users
@@ -216,7 +216,7 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-white shadow-lg border-0 hover:shadow-xl transition-shadow duration-300">
+          <Card className="bg-white shadow-lg border-0 hover:shadow-2xl hover:-translate-y-2 hover:scale-105 transition-all duration-300 cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-gray-600">
                 Addresses Processed
@@ -234,7 +234,7 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-white shadow-lg border-0 hover:shadow-xl transition-shadow duration-300">
+          <Card className="bg-white shadow-lg border-0 hover:shadow-2xl hover:-translate-y-2 hover:scale-105 transition-all duration-300 cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-gray-600">
                 Success Rate
@@ -252,7 +252,7 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-white shadow-lg border-0 hover:shadow-xl transition-shadow duration-300">
+          <Card className="bg-white shadow-lg border-0 hover:shadow-2xl hover:-translate-y-2 hover:scale-105 transition-all duration-300 cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-gray-600">
                 System Status
@@ -272,7 +272,7 @@ export default function DashboardPage() {
         {/* Main Modules */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* MLS Processor Module */}
-          <Card className="bg-white shadow-xl border-0 hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1">
+          <Card className="bg-white shadow-xl border-0 hover:shadow-2xl hover:-translate-y-2 hover:scale-105 transition-all duration-300 transform cursor-pointer">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
@@ -327,7 +327,7 @@ export default function DashboardPage() {
 
           {/* User Management Module */}
           {isAdmin && (
-            <Card className="bg-white shadow-xl border-0 hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1">
+            <Card className="bg-white shadow-xl border-0 hover:shadow-2xl hover:-translate-y-2 hover:scale-105 transition-all duration-300 transform cursor-pointer">
               <CardHeader className="pb-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
@@ -393,7 +393,7 @@ export default function DashboardPage() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Reports Module */}
-            <Card className="bg-gray-50 shadow-lg border-2 border-dashed border-gray-300 hover:border-gray-400 transition-colors duration-300">
+            <Card className="bg-gray-50 shadow-lg border-2 border-dashed border-gray-300 hover:border-gray-400 hover:shadow-xl hover:-translate-y-1 hover:scale-105 transition-all duration-300 cursor-pointer">
               <CardHeader className="pb-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
@@ -440,7 +440,7 @@ export default function DashboardPage() {
             </Card>
 
             {/* Analytics Module */}
-            <Card className="bg-gray-50 shadow-lg border-2 border-dashed border-gray-300 hover:border-gray-400 transition-colors duration-300">
+            <Card className="bg-gray-50 shadow-lg border-2 border-dashed border-gray-300 hover:border-gray-400 hover:shadow-xl hover:-translate-y-1 hover:scale-105 transition-all duration-300 cursor-pointer">
               <CardHeader className="pb-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
@@ -489,7 +489,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Actions */}
-        <Card className="bg-white shadow-lg border-0">
+        <Card className="bg-white shadow-lg border-0 hover:shadow-xl hover:-translate-y-1 hover:scale-105 transition-all duration-300 cursor-pointer">
           <CardHeader>
             <CardTitle className="text-xl text-gray-900 flex items-center">
               <Activity className="h-5 w-5 mr-2 text-blue-600" />

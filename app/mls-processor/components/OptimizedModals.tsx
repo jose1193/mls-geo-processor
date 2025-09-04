@@ -128,25 +128,25 @@ export default function OptimizedModals({
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button
                   onClick={onContinueFromProgress}
-                  className="glass-button glass-button-blue flex-1 bg-green-900/30 border border-green-500/30 text-green-200 font-medium px-4 py-2 rounded-lg hover:bg-green-900/50 hover:border-green-500/50 transition-all duration-300"
+                  className="glass-button glass-button-green flex-1 bg-green-600 border border-green-500 text-white font-medium px-4 py-2 rounded-lg hover:bg-green-700 hover:border-green-600 transition-all duration-300 flex items-center justify-center"
                 >
-                  <RefreshCw className="h-4 w-4 mr-2" />
+                  <RefreshCw className="h-4 w-4 mr-1" />
                   Continue Processing
                 </Button>
 
                 <Button
                   onClick={onDownloadRecoveryResults}
-                  className="glass-button glass-button-blue flex-1 bg-blue-900/30 border border-blue-500/30 text-blue-200 font-medium px-4 py-2 rounded-lg hover:bg-blue-900/50 hover:border-blue-500/50 transition-all duration-300"
+                  className="glass-button glass-button-blue flex-1 bg-blue-900/30 border border-blue-500/30 text-blue-200 font-medium px-4 py-2 rounded-lg hover:bg-blue-900/50 hover:border-blue-500/50 transition-all duration-300 flex items-center justify-center"
                 >
-                  <Download className="h-4 w-4 mr-2" />
+                  <Download className="h-4 w-4 mr-1" />
                   Download Partial Results
                 </Button>
 
                 <Button
                   onClick={onDiscardProgress}
-                  className="glass-button glass-button-red flex-1 bg-red-900/30 border border-red-500/30 text-red-200 font-medium px-4 py-2 rounded-lg hover:bg-red-900/50 hover:border-red-500/50 transition-all duration-300"
+                  className="glass-button glass-button-red flex-1 bg-red-900/30 border border-red-500/30 text-red-200 font-medium px-4 py-2 rounded-lg hover:bg-red-900/50 hover:border-red-500/50 transition-all duration-300 flex items-center justify-center"
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="h-4 w-4 mr-1" />
                   Start Fresh
                 </Button>
               </div>
@@ -155,9 +155,9 @@ export default function OptimizedModals({
                 <Button
                   onClick={onCloseRecoveryModal}
                   variant="ghost"
-                  className="bg-gray-700/50 border border-gray-600 text-gray-300 hover:bg-gray-600/50 hover:text-white transition-all duration-300"
+                  className="bg-gray-700/50 border border-gray-600 text-gray-300 hover:bg-gray-600/50 hover:text-white transition-all duration-300 flex items-center"
                 >
-                  <X className="h-4 w-4 mr-2" />
+                  <X className="h-4 w-4 mr-1" />
                   Close
                 </Button>
               </div>
@@ -188,24 +188,24 @@ export default function OptimizedModals({
               <div className="flex flex-col gap-3">
                 <Button
                   onClick={onExportResults}
-                  className="glass-button glass-button-blue bg-blue-900/30 border border-blue-500/30 text-blue-200 font-medium px-4 py-2 rounded-lg hover:bg-blue-900/50 hover:border-blue-500/50 transition-all duration-300"
+                  className="glass-button glass-button-blue bg-blue-900/30 border border-blue-500/30 text-blue-200 font-medium px-4 py-2 rounded-lg hover:bg-blue-900/50 hover:border-blue-500/50 transition-all duration-300 flex items-center justify-center"
                 >
-                  <Download className="h-4 w-4 mr-2" />
+                  <Download className="h-4 w-4 mr-1" />
                   Download Current Results
                 </Button>
 
                 <Button
                   onClick={onClearResults}
-                  className="glass-button glass-button-red bg-red-900/30 border border-red-500/30 text-red-200 font-medium px-4 py-2 rounded-lg hover:bg-red-900/50 hover:border-red-500/50 transition-all duration-300"
+                  className="glass-button glass-button-red bg-red-900/30 border border-red-500/30 text-red-200 font-medium px-4 py-2 rounded-lg hover:bg-red-900/50 hover:border-red-500/50 transition-all duration-300 flex items-center justify-center"
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="h-4 w-4 mr-1" />
                   Clear All & Start Over
                 </Button>
 
                 <Button
                   onClick={onCloseStopModal}
                   variant="outline"
-                  className="bg-gray-700/50 border-gray-600 text-gray-300 hover:bg-gray-600/50 hover:text-white transition-all duration-300"
+                  className="bg-gray-700/50 border-gray-600 text-gray-300 hover:bg-gray-600/50 hover:text-white transition-all duration-300 flex items-center justify-center"
                 >
                   💾 Save Progress & Continue Later
                 </Button>
@@ -237,17 +237,17 @@ export default function OptimizedModals({
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button
                   onClick={onExportResults}
-                  className="glass-button glass-button-blue flex-1 bg-green-900/30 border border-green-500/30 text-green-200 font-medium px-4 py-2 rounded-lg hover:bg-green-900/50 hover:border-green-500/50 transition-all duration-300"
+                  className="glass-button glass-button-green flex-1 bg-green-600 border border-green-500 text-white font-medium px-4 py-2 rounded-lg hover:bg-green-700 hover:border-green-600 transition-all duration-300 flex items-center justify-center"
                 >
-                  <Download className="h-4 w-4 mr-2" />
+                  <Download className="h-4 w-4 mr-1" />
                   Download Results
                 </Button>
 
                 <Button
                   onClick={onCloseSuccessModal}
-                  className="glass-button glass-button-blue flex-1 bg-blue-900/30 border border-blue-500/30 text-blue-200 font-medium px-4 py-2 rounded-lg hover:bg-blue-900/50 hover:border-blue-500/50 transition-all duration-300"
+                  className="glass-button glass-button-blue flex-1 bg-blue-900/30 border border-blue-500/30 text-blue-200 font-medium px-4 py-2 rounded-lg hover:bg-blue-900/50 hover:border-blue-500/50 transition-all duration-300 flex items-center justify-center"
                 >
-                  <CheckCircle className="h-4 w-4 mr-2" />
+                  <CheckCircle className="h-4 w-4 mr-1" />
                   Close
                 </Button>
               </div>
