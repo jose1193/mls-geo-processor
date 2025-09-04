@@ -68,9 +68,40 @@ export default function AdminPage() {
     handleSubmit,
     formState: { errors },
     reset,
+    setValue,
+    watch,
   } = useForm<UserForm>({
     resolver: zodResolver(userSchema),
   });
+
+  // Function to capitalize names in real time
+  const capitalizeName = (name: string): string => {
+    return name
+      .split(' ')
+      .map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      )
+      .join(' ');
+  };
+
+  // Watch the name field for real-time capitalization
+  const nameValue = watch("name");
+
+  // Handle name input change with real-time capitalization
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    // Only capitalize if user is typing (not deleting)
+    if (value.length > (nameValue?.length || 0)) {
+      const lastChar = value.slice(-1);
+      if (lastChar === ' ' || value.split(' ').length > (nameValue?.split(' ').length || 0)) {
+        setValue("name", capitalizeName(value));
+      } else {
+        setValue("name", value);
+      }
+    } else {
+      setValue("name", value);
+    }
+  };
 
   // Load users on component mount
   useEffect(() => {
@@ -259,7 +290,9 @@ export default function AdminPage() {
                   type="text"
                   placeholder="John Doe"
                   disabled={isLoading}
-                  {...register("name")}
+                  {...register("name", {
+                    onChange: handleNameChange
+                  })}
                   className={errors.name ? "border-red-500" : ""}
                 />
                 {errors.name && (

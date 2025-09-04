@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Download,
   RefreshCw,
@@ -95,6 +96,10 @@ export default function ReportsPage() {
   );
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Multiple selection state
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+
   // Fetch completed files
   const fetchCompletedFiles = React.useCallback(async () => {
     try {
@@ -168,6 +173,64 @@ export default function ReportsPage() {
   const handleDeleteCancel = () => {
     setShowDeleteModal(false);
     setFileToDelete(null);
+  };
+
+  // Bulk selection functions
+  const handleSelectFile = (fileId: string) => {
+    setSelectedFiles(prev => {
+      if (prev.includes(fileId)) {
+        return prev.filter(id => id !== fileId);
+      } else {
+        return [...prev, fileId];
+      }
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedFiles.length === completedFiles.length) {
+      setSelectedFiles([]);
+    } else {
+      setSelectedFiles(completedFiles.map(file => file.id));
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedFiles.length === 0) return;
+    setShowBulkDeleteModal(true);
+  };
+
+  const confirmBulkDelete = async () => {
+    if (selectedFiles.length === 0) return;
+
+    setIsDeleting(true);
+    try {
+      const deletePromises = selectedFiles.map(async (fileId) => {
+        const response = await fetch(`/api/reports/completed-files?id=${fileId}`, {
+          method: "DELETE",
+        });
+        return response.ok;
+      });
+
+      const results = await Promise.all(deletePromises);
+      const allSuccess = results.every(success => success);
+
+      if (allSuccess) {
+        await fetchCompletedFiles();
+        setSelectedFiles([]);
+        setShowBulkDeleteModal(false);
+      } else {
+        setError("Some files failed to delete");
+      }
+    } catch (err) {
+      setError("Failed to delete files");
+      console.error("Bulk delete error:", err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleBulkDeleteCancel = () => {
+    setShowBulkDeleteModal(false);
   };
 
   // Format file size
@@ -264,17 +327,30 @@ export default function ReportsPage() {
               Manage and download your processing results
             </p>
           </div>
-          <Button
-            onClick={fetchCompletedFiles}
-            disabled={isLoading}
-            variant="outline"
-            className="gap-2"
-          >
-            <RefreshCw
-              className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </Button>
+          <div className="flex gap-3">
+            {selectedFiles.length > 0 && (
+              <Button
+                onClick={handleBulkDelete}
+                disabled={isDeleting}
+                variant="destructive"
+                className="gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete Selected ({selectedFiles.length})
+              </Button>
+            )}
+            <Button
+              onClick={fetchCompletedFiles}
+              disabled={isLoading}
+              variant="outline"
+              className="gap-2"
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -376,6 +452,13 @@ export default function ReportsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-12 text-center">
+                        <Checkbox
+                          checked={selectedFiles.length === completedFiles.length && completedFiles.length > 0}
+                          onCheckedChange={handleSelectAll}
+                          aria-label="Select all files"
+                        />
+                      </TableHead>
                       <TableHead className="font-semibold text-center">
                         File Name
                       </TableHead>
@@ -411,6 +494,13 @@ export default function ReportsPage() {
 
                       return (
                         <TableRow key={file.id} className="hover:bg-blue-50/50">
+                          <TableCell className="text-center">
+                            <Checkbox
+                              checked={selectedFiles.includes(file.id)}
+                              onCheckedChange={() => handleSelectFile(file.id)}
+                              aria-label={`Select ${file.original_filename}`}
+                            />
+                          </TableCell>
                           <TableCell className="font-medium text-center">
                             <div className="flex items-center gap-2 justify-center">
                               <FileText className="h-4 w-4 text-blue-500" />
@@ -632,6 +722,81 @@ export default function ReportsPage() {
                     <>
                       <Trash2 className="h-4 w-4 mr-2" />
                       Delete File
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkDeleteModal && selectedFiles.length > 0 && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-lg overflow-hidden shadow-xl">
+            {/* Header rojo completamente arriba */}
+            <div className="bg-red-600 text-white px-6 py-4">
+              <div className="flex items-center gap-3">
+                <Trash2 className="h-6 w-6" />
+                <h3 className="text-xl font-semibold">Delete Multiple Reports</h3>
+              </div>
+            </div>
+
+            {/* Contenido del modal */}
+            <div className="p-6 space-y-4">
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertCircle className="h-4 w-4" />
+                  <span className="font-medium">Are you sure?</span>
+                </div>
+                <p className="text-sm">
+                  This action cannot be undone. This will permanently delete{" "}
+                  <span className="font-medium">{selectedFiles.length}</span> selected file{selectedFiles.length === 1 ? '' : 's'}.
+                </p>
+              </div>
+
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="text-sm text-gray-600">
+                  <div className="font-medium mb-2">Selected files:</div>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {selectedFiles.map(fileId => {
+                      const file = completedFiles.find(f => f.id === fileId);
+                      return file ? (
+                        <div key={fileId} className="text-xs bg-white px-2 py-1 rounded border">
+                          {file.original_filename}
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={handleBulkDeleteCancel}
+                  disabled={isDeleting}
+                  className="flex-1"
+                >
+                  <X className="h-4 w-4 mr-2" />
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={confirmBulkDelete}
+                  disabled={isDeleting}
+                  className="flex-1"
+                >
+                  {isDeleting ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete {selectedFiles.length} File{selectedFiles.length === 1 ? '' : 's'}
                     </>
                   )}
                 </Button>
