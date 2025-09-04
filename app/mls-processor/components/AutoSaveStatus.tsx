@@ -3,7 +3,7 @@
 // Shows real-time auto-save progress and completed files
 // ===================================================================
 
-import React from "react";
+import React, { useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +24,8 @@ import {
   ExternalLink,
   Loader2,
   RefreshCw,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import type { AutoSaveState } from "../hooks/useAutoSave";
 import "../styles/glassmorphism.css";
@@ -41,9 +43,29 @@ export function AutoSaveStatus({
   clearAutoSaveError,
   className = "",
 }: AutoSaveStatusProps) {
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const filesPerPage = 5;
+
   // Use completed files directly from autoSaveState
   const completedFiles = autoSaveState.completedFiles;
   const isLoadingFiles = autoSaveState.isLoadingFiles;
+
+  // Pagination logic
+  const totalPages = Math.ceil(completedFiles.length / filesPerPage);
+  const startIndex = (currentPage - 1) * filesPerPage;
+  const endIndex = startIndex + filesPerPage;
+  const currentFiles = useMemo(
+    () => completedFiles.slice(startIndex, endIndex),
+    [completedFiles, startIndex, endIndex]
+  );
+
+  // Reset to page 1 when files change
+  React.useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(1);
+    }
+  }, [totalPages, currentPage]);
 
   const formatFileSize = (file: {
     file_size_bytes?: number | null;
@@ -235,7 +257,7 @@ export function AutoSaveStatus({
             </div>
           ) : (
             <div className="space-y-3">
-              {completedFiles.slice(0, 5).map((file) => (
+              {currentFiles.map((file) => (
                 <div
                   key={file.id}
                   className="flex items-center justify-between p-3 bg-slate-700/50 border border-slate-600 rounded-lg hover:bg-slate-600/50 transition-colors"
@@ -309,18 +331,64 @@ export function AutoSaveStatus({
                 </div>
               ))}
 
-              {completedFiles.length > 5 && (
-                <div className="text-center pt-2">
-                  <p className="text-xs text-gray-400">
-                    Showing 5 of {completedFiles.length} files
-                  </p>
-                  <Button
-                    variant="link"
-                    size="sm"
-                    className="text-xs text-blue-400 hover:text-blue-300"
-                  >
-                    View all files →
-                  </Button>
+              {/* Pagination Controls */}
+              {completedFiles.length > filesPerPage && (
+                <div className="flex items-center justify-between pt-4 border-t border-slate-600">
+                  <div className="flex items-center space-x-2">
+                    <p className="text-xs text-gray-400">
+                      Showing {startIndex + 1}-
+                      {Math.min(endIndex, completedFiles.length)} of{" "}
+                      {completedFiles.length} files
+                    </p>
+                  </div>
+
+                  <div className="flex items-center space-x-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2 glass-button glass-button-gray"
+                      onClick={() =>
+                        setCurrentPage((prev) => Math.max(prev - 1, 1))
+                      }
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-3 w-3" />
+                      <span className="sr-only">Previous page</span>
+                    </Button>
+
+                    <div className="flex items-center space-x-1">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                        (page) => (
+                          <Button
+                            key={page}
+                            variant={page === currentPage ? "default" : "ghost"}
+                            size="sm"
+                            className={`h-8 px-3 text-xs ${
+                              page === currentPage
+                                ? "bg-blue-600 text-white"
+                                : "glass-button glass-button-gray"
+                            }`}
+                            onClick={() => setCurrentPage(page)}
+                          >
+                            {page}
+                          </Button>
+                        )
+                      )}
+                    </div>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2 glass-button glass-button-gray"
+                      onClick={() =>
+                        setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                      }
+                      disabled={currentPage === totalPages}
+                    >
+                      <ChevronRight className="h-3 w-3" />
+                      <span className="sr-only">Next page</span>
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>

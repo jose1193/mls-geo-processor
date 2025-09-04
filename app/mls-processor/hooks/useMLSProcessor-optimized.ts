@@ -194,47 +194,47 @@ export interface OptimizedProcessingProgress {
 // Adaptive configuration based on dataset size
 const getOptimizedConfigForSize = (recordCount: number) => {
   if (recordCount <= 50) {
-    // Small test files (9-50 records) - Conservative to avoid 429
+    // Small test files (9-50 records) - Ultra Conservative
     return {
-      CONCURRENCY_LIMIT: 5, // Reduced from 15 to avoid rate limits
-      BATCH_SIZE: 10, // Smaller batches
+      CONCURRENCY_LIMIT: 3, // Further reduced to avoid rate limits
+      BATCH_SIZE: 5, // Smaller batches
       MAX_RETRIES: 3,
-      TARGET_THROUGHPUT: 15, // Reduced from 25
+      TARGET_THROUGHPUT: 10, // Further reduced
       MEMORY_CLEANUP_INTERVAL: 10000,
-      RETRY_DELAY_BASE: 1000, // Increased delay
+      RETRY_DELAY_BASE: 1500, // Increased delay
       CACHE_EXPIRY_HOURS: 6,
     };
   } else if (recordCount <= 1000) {
-    // Medium files (1000 records) - Balanced Performance
+    // Medium files (1000 records) - Conservative
     return {
-      CONCURRENCY_LIMIT: 8, // Reduced from 20
-      BATCH_SIZE: 50, // Reduced from 100
+      CONCURRENCY_LIMIT: 5, // Further reduced
+      BATCH_SIZE: 25, // Smaller batches
       MAX_RETRIES: 3,
-      TARGET_THROUGHPUT: 18, // Reduced from 22
+      TARGET_THROUGHPUT: 12, // Further reduced
       MEMORY_CLEANUP_INTERVAL: 8000,
-      RETRY_DELAY_BASE: 1200, // Increased delay
+      RETRY_DELAY_BASE: 1500, // Increased delay
       CACHE_EXPIRY_HOURS: 12,
     };
   } else if (recordCount <= 10000) {
-    // Large files (10K records) - Optimized Throughput
+    // Large files (10K records) - Balanced
     return {
-      CONCURRENCY_LIMIT: 10, // Reduced from 15
-      BATCH_SIZE: 100, // Reduced from 200
+      CONCURRENCY_LIMIT: 6, // Further reduced
+      BATCH_SIZE: 50, // Smaller batches
       MAX_RETRIES: 2,
-      TARGET_THROUGHPUT: 15, // Reduced from 18
+      TARGET_THROUGHPUT: 10, // Further reduced
       MEMORY_CLEANUP_INTERVAL: 6000,
-      RETRY_DELAY_BASE: 1500,
+      RETRY_DELAY_BASE: 2000,
       CACHE_EXPIRY_HOURS: 24,
     };
   } else {
-    // Very large files (30K-110K) - Ultra Stable
+    // Very large files (30K-110K) - Ultra Conservative
     return {
-      CONCURRENCY_LIMIT: 8, // Reduced from 10
-      BATCH_SIZE: 80, // Reduced from 100
+      CONCURRENCY_LIMIT: 4, // Significantly reduced
+      BATCH_SIZE: 40, // Smaller batches
       MAX_RETRIES: 2,
-      TARGET_THROUGHPUT: 12, // Reduced from 15
+      TARGET_THROUGHPUT: 8, // Very conservative
       MEMORY_CLEANUP_INTERVAL: 5000,
-      RETRY_DELAY_BASE: 2000,
+      RETRY_DELAY_BASE: 3000, // Longer delays
       CACHE_EXPIRY_HOURS: 48,
     };
   }
@@ -242,9 +242,9 @@ const getOptimizedConfigForSize = (recordCount: number) => {
 
 // Base configuration - will be overridden by adaptive config
 const OPTIMIZED_CONFIG = {
-  // Small delays to prevent rate limiting
-  DELAY_BETWEEN_REQUESTS: 100, // 100ms delay between requests
-  GEMINI_DELAY: 150, // 150ms delay for Gemini requests
+  // Delays to prevent rate limiting (increased for Gemini stability)
+  DELAY_BETWEEN_REQUESTS: 150, // Increased from 100ms
+  GEMINI_DELAY: 300, // Increased from 150ms - Gemini needs more breathing room
 
   // Default values (will be overridden)
   CONCURRENCY_LIMIT: 15,
@@ -279,10 +279,10 @@ const OPTIMIZED_API_LIMITS = {
   geocodio: 50000, // Daily limit
   gemini: 100000, // Daily limit
 
-  // Per-minute rates (very conservative to avoid 429 errors)
-  mapboxPerMinute: 200, // Reduced from 300 for extra stability
-  geocodioPerMinute: 300, // Reduced from 500 for extra stability
-  geminiPerMinute: 500, // Reduced from 750 for extra stability
+  // Per-minute rates (extra conservative to avoid 429 errors)
+  mapboxPerMinute: 150, // Further reduced for stability
+  geocodioPerMinute: 250, // Further reduced for stability
+  geminiPerMinute: 200, // Significantly reduced - Gemini seems most sensitive
 };
 
 // Log API limits for reference
@@ -940,6 +940,9 @@ export function useMLSProcessorOptimized(userId?: string | null) {
     ]
   );
 
+  // GEOCODIO FUNCTION DISABLED - Not providing neighborhood/community data efficiently
+  // Keeping function commented for potential future use if needed
+  /*
   const geocodeWithGeocodioOptimized = useCallback(
     async (
       address: string,
@@ -1072,6 +1075,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       cacheGeocodingResult,
     ]
   );
+  */
 
   const getNeighborhoodFromGeminiOptimized = useCallback(
     async (
@@ -1122,6 +1126,8 @@ export function useMLSProcessorOptimized(userId?: string | null) {
 
             if (!response.ok) {
               if (response.status === 429) {
+                console.log("Gemini rate limit hit, waiting 5 seconds...");
+                await new Promise((resolve) => setTimeout(resolve, 5000));
                 const error = new Error("Rate limited by Gemini") as Error & {
                   name: string;
                 };
@@ -1356,39 +1362,16 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                 ? "Cache"
                 : "Mapbox + Gemini";
         } else {
-          // Fallback to Geocodio
-          const geocodioResult = await geocodeWithGeocodioOptimized(
-            address,
-            zip,
-            city,
-            county
+          // Mapbox failed - Skip Geocodio fallback (doesn't provide neighborhood/community data)
+          // Instead, try to get neighborhood/community from Gemini even without coordinates
+          addLog(
+            `⚠️ Mapbox failed for: ${address} - Attempting Gemini for neighborhood data only`,
+            "warning"
           );
 
-          if (geocodioResult.success && geocodioResult.data) {
-            result = {
-              ...result,
-              formatted_address: geocodioResult.data.formatted,
-              latitude: geocodioResult.data.latitude,
-              longitude: geocodioResult.data.longitude,
-              neighbourhood: geocodioResult.data.neighbourhood || undefined,
-              "House Number":
-                geocodioResult.data["House Number"] || houseNumber || "",
-              // Only use Geocodio neighborhood if not from Excel
-              neighborhoods:
-                existingNeighborhoods ||
-                geocodioResult.data.neighbourhood ||
-                result.neighborhoods,
-              neighborhood_source: existingNeighborhoods
-                ? "Excel"
-                : geocodioResult.cached
-                  ? "Cache"
-                  : "Geocodio",
-              cached_result: geocodioResult.cached || false,
-              api_source: "Geocodio Fallback",
-            };
-
-            // Try Gemini for community data only if not from Excel
-            if (!existingCommunities) {
+          // Try Gemini for neighborhood and community data even without coordinates
+          if (!existingNeighborhoods || !existingCommunities) {
+            try {
               const geminiResult = await getNeighborhoodFromGeminiOptimized(
                 address,
                 zip,
@@ -1397,39 +1380,49 @@ export function useMLSProcessorOptimized(userId?: string | null) {
               );
 
               if (geminiResult.success && geminiResult.data) {
-                // Only use Gemini neighborhood if not from Excel and not from Geocodio
-                if (
-                  !existingNeighborhoods &&
-                  geminiResult.data.neighborhood &&
-                  !geocodioResult.data.neighbourhood
-                ) {
+                // Use Gemini neighborhood if not from Excel
+                if (!existingNeighborhoods && geminiResult.data.neighborhood) {
                   result.neighborhoods = geminiResult.data.neighborhood;
                   result.neighborhood_source = geminiResult.cached
                     ? "Cache"
                     : "Gemini";
                 }
 
-                // Use Gemini community
-                const communityValue =
-                  geminiResult.data.community || result["Community"];
-                result.comunidades = communityValue;
-                result["Community"] = communityValue;
-                result["Community Source"] = geminiResult.cached
-                  ? "Cache"
-                  : "Gemini";
-                result.community_source = geminiResult.cached
-                  ? "Cache"
-                  : "Gemini";
+                // Use Gemini community if not from Excel
+                if (!existingCommunities && geminiResult.data.community) {
+                  const communityValue = geminiResult.data.community;
+                  result.comunidades = communityValue;
+                  result["Community"] = communityValue;
+                  result["Community Source"] = geminiResult.cached
+                    ? "Cache"
+                    : "Gemini";
+                  result.community_source = geminiResult.cached
+                    ? "Cache"
+                    : "Gemini";
+                }
+
+                result.api_source = "Gemini Only (No Coordinates)";
+                addLog(
+                  `✅ Got neighborhood/community from Gemini for: ${address}`,
+                  "info"
+                );
+              } else {
+                addLog(`❌ Gemini also failed for: ${address}`, "error");
               }
+            } catch (geminiError) {
+              addLog(
+                `❌ Gemini error for: ${address} - ${(geminiError as Error).message}`,
+                "error"
+              );
             }
-          } else {
-            // All geocoding failed
-            result.status = "error";
-            result.error = `All geocoding services failed: Mapbox: ${mapboxResult.error}, Geocodio: ${geocodioResult.error}`;
-            result.api_source = "Failed";
-            // Still try to extract house number even on failure
-            result["House Number"] = houseNumber || "";
           }
+
+          // Mark as error since we couldn't get coordinates (main requirement)
+          result.status = "error";
+          result.error = `Geocoding failed: ${mapboxResult.error}. No coordinates available.`;
+          result.api_source = result.api_source || "Failed";
+          // Still try to extract house number even on failure
+          result["House Number"] = houseNumber || "";
         }
 
         const processingTime = performance.now() - startTime;
@@ -1455,11 +1448,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
         };
       }
     },
-    [
-      geocodeWithMapboxOptimized,
-      geocodeWithGeocodioOptimized,
-      getNeighborhoodFromGeminiOptimized,
-    ]
+    [geocodeWithMapboxOptimized, getNeighborhoodFromGeminiOptimized, addLog]
   );
 
   // ===================================================================
@@ -1520,11 +1509,11 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       ];
 
       addLog(
-        `🚀 ${options?.continueFromIndex ? "Continuing" : "Starting"} LARGE DATASET processing: ${addressDataList.length} ${options?.continueFromIndex ? "remaining" : ""} records in ${totalBatches} batches`,
+        `🚀 ${options?.continueFromIndex ? "Continuing" : "Starting"} OPTIMIZED processing: ${addressDataList.length} ${options?.continueFromIndex ? "remaining" : ""} records in ${totalBatches} batches`,
         "info"
       );
       addLog(
-        `⚙️ 100K+ Config: ${batchConfig.concurrencyLimit} concurrent, ${batchConfig.batchSize} batch size (optimized for stability)`,
+        `⚙️ Pipeline: Mapbox (coordinates) + Gemini (neighborhoods/communities) - ${batchConfig.concurrencyLimit} concurrent, ${batchConfig.batchSize} batch size`,
         "info"
       );
 
