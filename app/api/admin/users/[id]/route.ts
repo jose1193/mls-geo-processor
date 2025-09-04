@@ -19,6 +19,14 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     const userId = params.id;
 
+    // Check if Supabase admin client is available
+    if (!supabaseAdmin) {
+      return NextResponse.json(
+        { error: "Database connection not available" },
+        { status: 503 }
+      );
+    }
+
     // Verificar que el usuario existe y obtener información
     const { data: userToDelete, error: fetchError } = await supabaseAdmin
       .from("users")
@@ -80,6 +88,14 @@ async function logSecurityEvent(
   details: Record<string, unknown> = {}
 ) {
   try {
+    // Check if Supabase admin client is available
+    if (!supabaseAdmin) {
+      console.warn(
+        "Cannot log security event: Supabase admin client not available"
+      );
+      return;
+    }
+
     const ip =
       request.headers.get("x-forwarded-for")?.split(",")[0] ||
       request.headers.get("x-real-ip") ||

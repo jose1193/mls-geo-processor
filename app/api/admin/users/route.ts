@@ -17,6 +17,14 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Verificar que supabaseAdmin esté disponible
+    if (!supabaseAdmin) {
+      return NextResponse.json(
+        { error: "Database connection not available" },
+        { status: 500 }
+      );
+    }
+
     // Obtener usuarios de la base de datos
     const { data: users, error } = await supabaseAdmin
       .from("users")
@@ -52,6 +60,14 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const { email, name } = createUserSchema.parse(body);
+
+    // Verificar que supabaseAdmin esté disponible
+    if (!supabaseAdmin) {
+      return NextResponse.json(
+        { error: "Database connection not available" },
+        { status: 500 }
+      );
+    }
 
     // Verificar si el usuario ya existe
     const { data: existingUser } = await supabaseAdmin
@@ -121,6 +137,12 @@ async function logSecurityEvent(
   details: Record<string, unknown> = {}
 ) {
   try {
+    // Verificar que supabaseAdmin esté disponible
+    if (!supabaseAdmin) {
+      console.error("supabaseAdmin not available for logging");
+      return;
+    }
+
     const ip =
       request.headers.get("x-forwarded-for")?.split(",")[0] ||
       request.headers.get("x-real-ip") ||

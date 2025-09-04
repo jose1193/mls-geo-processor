@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { UserMenu } from "./user-menu";
-import { Home, FileSpreadsheet, Users } from "lucide-react";
+import { Home, FileSpreadsheet, Users, BarChart3 } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 export function Navigation() {
@@ -27,6 +27,11 @@ export function Navigation() {
       name: "MLS Processor",
       href: "/mls-processor",
       icon: FileSpreadsheet,
+    },
+    {
+      name: "Reports",
+      href: "/reports",
+      icon: BarChart3,
     },
   ];
 
