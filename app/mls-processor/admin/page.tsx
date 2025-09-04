@@ -77,11 +77,9 @@ export default function AdminPage() {
   // Function to capitalize names in real time
   const capitalizeName = (name: string): string => {
     return name
-      .split(' ')
-      .map(word => 
-        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-      )
-      .join(' ');
+      .split(" ")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
   };
 
   // Watch the name field for real-time capitalization
@@ -93,7 +91,10 @@ export default function AdminPage() {
     // Only capitalize if user is typing (not deleting)
     if (value.length > (nameValue?.length || 0)) {
       const lastChar = value.slice(-1);
-      if (lastChar === ' ' || value.split(' ').length > (nameValue?.split(' ').length || 0)) {
+      if (
+        lastChar === " " ||
+        value.split(" ").length > (nameValue?.split(" ").length || 0)
+      ) {
         setValue("name", capitalizeName(value));
       } else {
         setValue("name", value);
@@ -291,7 +292,7 @@ export default function AdminPage() {
                   placeholder="John Doe"
                   disabled={isLoading}
                   {...register("name", {
-                    onChange: handleNameChange
+                    onChange: handleNameChange,
                   })}
                   className={errors.name ? "border-red-500" : ""}
                 />

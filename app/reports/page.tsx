@@ -177,9 +177,9 @@ export default function ReportsPage() {
 
   // Bulk selection functions
   const handleSelectFile = (fileId: string) => {
-    setSelectedFiles(prev => {
+    setSelectedFiles((prev) => {
       if (prev.includes(fileId)) {
-        return prev.filter(id => id !== fileId);
+        return prev.filter((id) => id !== fileId);
       } else {
         return [...prev, fileId];
       }
@@ -190,7 +190,7 @@ export default function ReportsPage() {
     if (selectedFiles.length === completedFiles.length) {
       setSelectedFiles([]);
     } else {
-      setSelectedFiles(completedFiles.map(file => file.id));
+      setSelectedFiles(completedFiles.map((file) => file.id));
     }
   };
 
@@ -205,14 +205,14 @@ export default function ReportsPage() {
     setIsDeleting(true);
     try {
       const deletePromises = selectedFiles.map(async (fileId) => {
-        const response = await fetch(`/api/reports/completed-files?id=${fileId}`, {
+        const response = await fetch(`/api/reports/completed-files/${fileId}`, {
           method: "DELETE",
         });
         return response.ok;
       });
 
       const results = await Promise.all(deletePromises);
-      const allSuccess = results.every(success => success);
+      const allSuccess = results.every((success) => success);
 
       if (allSuccess) {
         await fetchCompletedFiles();
@@ -454,7 +454,10 @@ export default function ReportsPage() {
                     <TableRow>
                       <TableHead className="w-12 text-center">
                         <Checkbox
-                          checked={selectedFiles.length === completedFiles.length && completedFiles.length > 0}
+                          checked={
+                            selectedFiles.length === completedFiles.length &&
+                            completedFiles.length > 0
+                          }
                           onCheckedChange={handleSelectAll}
                           aria-label="Select all files"
                         />
@@ -739,7 +742,9 @@ export default function ReportsPage() {
             <div className="bg-red-600 text-white px-6 py-4">
               <div className="flex items-center gap-3">
                 <Trash2 className="h-6 w-6" />
-                <h3 className="text-xl font-semibold">Delete Multiple Reports</h3>
+                <h3 className="text-xl font-semibold">
+                  Delete Multiple Reports
+                </h3>
               </div>
             </div>
 
@@ -752,7 +757,8 @@ export default function ReportsPage() {
                 </div>
                 <p className="text-sm">
                   This action cannot be undone. This will permanently delete{" "}
-                  <span className="font-medium">{selectedFiles.length}</span> selected file{selectedFiles.length === 1 ? '' : 's'}.
+                  <span className="font-medium">{selectedFiles.length}</span>{" "}
+                  selected file{selectedFiles.length === 1 ? "" : "s"}.
                 </p>
               </div>
 
@@ -760,10 +766,13 @@ export default function ReportsPage() {
                 <div className="text-sm text-gray-600">
                   <div className="font-medium mb-2">Selected files:</div>
                   <div className="max-h-32 overflow-y-auto space-y-1">
-                    {selectedFiles.map(fileId => {
-                      const file = completedFiles.find(f => f.id === fileId);
+                    {selectedFiles.map((fileId) => {
+                      const file = completedFiles.find((f) => f.id === fileId);
                       return file ? (
-                        <div key={fileId} className="text-xs bg-white px-2 py-1 rounded border">
+                        <div
+                          key={fileId}
+                          className="text-xs bg-white px-2 py-1 rounded border"
+                        >
                           {file.original_filename}
                         </div>
                       ) : null;
@@ -796,7 +805,8 @@ export default function ReportsPage() {
                   ) : (
                     <>
                       <Trash2 className="h-4 w-4 mr-2" />
-                      Delete {selectedFiles.length} File{selectedFiles.length === 1 ? '' : 's'}
+                      Delete {selectedFiles.length} File
+                      {selectedFiles.length === 1 ? "" : "s"}
                     </>
                   )}
                 </Button>
