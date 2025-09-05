@@ -27,6 +27,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
           const { email, otp } = parsedCredentials.data;
 
+          // Check if Supabase admin client is available
+          if (!supabaseAdmin) {
+            console.error("Supabase admin client not available");
+            return null;
+          }
+
           // Verificar que el email está autorizado en la tabla de usuarios
           const { data: user, error } = await supabaseAdmin
             .from("users")
