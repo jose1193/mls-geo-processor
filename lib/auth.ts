@@ -52,13 +52,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               ? window.location.origin
               : "http://localhost:3000");
 
+          console.log(`[AUTH] Base URL for OTP verification: ${baseUrl}`);
+          console.log(`[AUTH] ENV - AUTH_URL: ${process.env.AUTH_URL}`);
+          console.log(`[AUTH] ENV - NEXTAUTH_URL: ${process.env.NEXTAUTH_URL}`);
+
           const verifyResponse = await fetch(`${baseUrl}/api/auth/verify-otp`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email, otp }),
           });
 
+          console.log(`[AUTH] Verify response status: ${verifyResponse.status}`);
+          
           if (!verifyResponse.ok) {
+            const errorText = await verifyResponse.text();
+            console.log(`[AUTH] Verify response error: ${errorText}`);
             return null;
           }
 
