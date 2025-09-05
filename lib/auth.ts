@@ -45,11 +45,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           }
 
           // Verificar OTP usando API interna
-          const baseUrl = process.env.NEXTAUTH_URL || 
-            (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
-          
           const verifyResponse = await fetch(
-            `${baseUrl}/api/auth/verify-otp`,
+            `${process.env.NEXTAUTH_URL}/api/auth/verify-otp`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },

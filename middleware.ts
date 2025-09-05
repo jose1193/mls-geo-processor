@@ -20,11 +20,6 @@ export default auth(async function middleware(request: NextRequest) {
   // En NextAuth v5, la sesión ya está disponible en request.auth
   const session = (request as NextRequest & { auth?: Session | null }).auth;
 
-  // Debugging en producción para verificar sesión
-  if (process.env.NODE_ENV === "production") {
-    console.log(`[MIDDLEWARE] Path: ${pathname}, Session exists: ${!!session}`);
-  }
-
   // Si usuario está logueado e intenta acceder al login, redirigir al dashboard
   if (session && pathname === "/") {
     const dashboardUrl = new URL("/dashboard", request.url);
