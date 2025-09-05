@@ -20,6 +20,13 @@ export const generalAPILimiter = new RateLimiterMemory({
   blockDuration: 60, // Bloquear por 1 minuto
 });
 
+// Rate limiter específico para APIs de geocoding (más permisivo)
+export const geocodingAPILimiter = new RateLimiterMemory({
+  points: 1000, // 1000 requests para geocoding
+  duration: 900, // Por 15 minutos (mayor capacidad para MLS processing)
+  blockDuration: 30, // Bloquear por 30 segundos (menos tiempo de bloqueo)
+});
+
 // Función helper para obtener IP del request
 function getClientIP(req: NextRequest): string {
   const forwarded = req.headers.get("x-forwarded-for");

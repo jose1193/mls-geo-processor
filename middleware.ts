@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "./lib/auth";
 import type { Session } from "next-auth";
-import { applyRateLimit, generalAPILimiter } from "./lib/rate-limiting";
+import {
+  applyRateLimit,
+  generalAPILimiter,
+  geocodingAPILimiter,
+} from "./lib/rate-limiting";
 import {
   applySecurityHeaders,
   validateRequestOrigin,
@@ -22,15 +26,25 @@ export default auth(async function middleware(request: NextRequest) {
   }
 
   // Aplicar rate limiting a todas las requests
-  const rateLimitResult = await applyRateLimit(generalAPILimiter, request);
+  // Usar rate limiter específico para APIs de geocoding
+  const isGeocodingAPI = pathname.startsWith("/api/geocoding/");
+  const rateLimiter = isGeocodingAPI ? geocodingAPILimiter : generalAPILimiter;
+
+  const rateLimitResult = await applyRateLimit(rateLimiter, request);
   if (!rateLimitResult.allowed) {
-    return new NextResponse(JSON.stringify({ error: rateLimitResult.error }), {
-      status: 429,
-      headers: {
-        "Content-Type": "application/json",
-        "Retry-After": rateLimitResult.retryAfter?.toString() || "60",
-      },
-    });
+    return new NextResponse(
+      JSON.stringify({
+        error: rateLimitResult.error,
+        type: isGeocodingAPI ? "geocoding_rate_limit" : "general_rate_limit",
+      }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": rateLimitResult.retryAfter?.toString() || "60",
+        },
+      }
+    );
   }
 
   // Crear response base

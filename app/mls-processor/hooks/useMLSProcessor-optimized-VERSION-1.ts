@@ -362,68 +362,6 @@ class MapboxMemoryCache {
       totalHits,
     };
   }
-
-  // Export cache entries for persistence
-  exportEntries(): Record<
-    string,
-    {
-      data: OptimizedMapboxResult["data"] | null;
-      timestamp: number;
-      expiryTime: number;
-      hitCount: number;
-    }
-  > {
-    const exported: Record<
-      string,
-      {
-        data: OptimizedMapboxResult["data"] | null;
-        timestamp: number;
-        expiryTime: number;
-        hitCount: number;
-      }
-    > = {};
-
-    for (const [key, entry] of this.cache.entries()) {
-      if (entry && Date.now() < entry.expiryTime) {
-        exported[key] = {
-          data: entry.data,
-          timestamp: entry.timestamp,
-          expiryTime: entry.expiryTime,
-          hitCount: entry.hitCount,
-        };
-      }
-    }
-
-    return exported;
-  }
-
-  // Import cache entries from persistence
-  importEntries(
-    entries: Record<
-      string,
-      {
-        data: OptimizedMapboxResult["data"] | null;
-        timestamp: number;
-        expiryTime: number;
-        hitCount: number;
-      }
-    >
-  ): number {
-    let importedCount = 0;
-    for (const [key, entry] of Object.entries(entries)) {
-      if (entry && Date.now() < entry.expiryTime) {
-        this.cache.set(key, {
-          key,
-          data: entry.data,
-          timestamp: entry.timestamp,
-          expiryTime: entry.expiryTime,
-          hitCount: entry.hitCount,
-        });
-        importedCount++;
-      }
-    }
-    return importedCount;
-  }
 }
 
 class GeminiMemoryCache {
@@ -496,68 +434,6 @@ class GeminiMemoryCache {
       totalHits,
     };
   }
-
-  // Export cache entries for persistence
-  exportEntries(): Record<
-    string,
-    {
-      data: OptimizedGeminiResult["data"] | null;
-      timestamp: number;
-      expiryTime: number;
-      hitCount: number;
-    }
-  > {
-    const exported: Record<
-      string,
-      {
-        data: OptimizedGeminiResult["data"] | null;
-        timestamp: number;
-        expiryTime: number;
-        hitCount: number;
-      }
-    > = {};
-
-    for (const [key, entry] of this.cache.entries()) {
-      if (entry && Date.now() < entry.expiryTime) {
-        exported[key] = {
-          data: entry.data,
-          timestamp: entry.timestamp,
-          expiryTime: entry.expiryTime,
-          hitCount: entry.hitCount,
-        };
-      }
-    }
-
-    return exported;
-  }
-
-  // Import cache entries from persistence
-  importEntries(
-    entries: Record<
-      string,
-      {
-        data: OptimizedGeminiResult["data"] | null;
-        timestamp: number;
-        expiryTime: number;
-        hitCount: number;
-      }
-    >
-  ): number {
-    let importedCount = 0;
-    for (const [key, entry] of Object.entries(entries)) {
-      if (entry && Date.now() < entry.expiryTime) {
-        this.cache.set(key, {
-          key,
-          data: entry.data,
-          timestamp: entry.timestamp,
-          expiryTime: entry.expiryTime,
-          hitCount: entry.hitCount,
-        });
-        importedCount++;
-      }
-    }
-    return importedCount;
-  }
 }
 
 // ===================================================================
@@ -586,15 +462,6 @@ export function useMLSProcessorOptimized(userId?: string | null) {
     cacheHitCount: 0,
     errorCount: 0,
     rateLimitCount: 0,
-  });
-
-  // API usage counters that persist correctly during STOP/CONTINUE
-  const apiCounters = useRef({
-    mapboxCount: 0,
-    geocodioCount: 0,
-    geminiCount: 0,
-    mapboxCalls: 0,
-    geminiCalls: 0,
   });
 
   // Enhanced state management
@@ -893,43 +760,13 @@ export function useMLSProcessorOptimized(userId?: string | null) {
           JSON.stringify(progressData)
         );
 
-        // Save API counters for persistence across STOP/CONTINUE
-        const apiCountersData = {
-          mapboxCalls: apiCounters.current.mapboxCalls,
-          geminiCalls: apiCounters.current.geminiCalls,
+        // Also save cache data to localStorage for persistence
+        const cacheData = {
+          geocoding: {},
+          gemini: {},
         };
-        localStorage.setItem(
-          "optimized-api-counters",
-          JSON.stringify(apiCountersData)
-        );
 
-        // Save cache data to localStorage for persistence
-        try {
-          // Export geocoding cache
-          const geocodingCacheData = geocodingCache.current.exportEntries();
-
-          // Export gemini cache
-          const geminiCacheData = geminiCache.current.exportEntries();
-
-          const cacheData = {
-            geocoding: geocodingCacheData,
-            gemini: geminiCacheData,
-            savedAt: Date.now(),
-          };
-
-          localStorage.setItem(OPTIMIZED_CACHE_KEY, JSON.stringify(cacheData));
-          localStorage.setItem(
-            OPTIMIZED_GEMINI_CACHE_KEY,
-            JSON.stringify(cacheData.gemini)
-          );
-
-          addLog(
-            `💾 Cache persisted: ${Object.keys(geocodingCacheData).length} geocoding + ${Object.keys(geminiCacheData).length} gemini entries`,
-            "info"
-          );
-        } catch (cacheError) {
-          console.warn("Failed to save cache to localStorage:", cacheError);
-        }
+        localStorage.setItem(OPTIMIZED_CACHE_KEY, JSON.stringify(cacheData));
 
         addLog(
           `💾 Progress auto-saved: ${results.length} records processed`,
@@ -996,13 +833,6 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       city: string,
       county: string
     ): Promise<OptimizedMapboxResult> => {
-      // Add delay before request to prevent rate limiting
-      if (OPTIMIZED_CONFIG.DELAY_BETWEEN_REQUESTS > 0) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, OPTIMIZED_CONFIG.DELAY_BETWEEN_REQUESTS)
-        );
-      }
-
       const startTime = performance.now();
 
       try {
@@ -1077,11 +907,9 @@ export function useMLSProcessorOptimized(userId?: string | null) {
         // Cache the result
         cacheGeocodingResult(address, city, county, optimizedResult.data);
 
-        // Update both ref counter and state
-        apiCounters.current.mapboxCount++;
         setStats((prev) => ({
           ...prev,
-          mapboxCount: apiCounters.current.mapboxCount,
+          mapboxCount: prev.mapboxCount + 1,
         }));
 
         return optimizedResult;
@@ -1105,9 +933,6 @@ export function useMLSProcessorOptimized(userId?: string | null) {
     ]
   );
 
-  // GEOCODIO FUNCTION DISABLED - Not providing neighborhood/community data efficiently
-  // Keeping function commented for potential future use if needed
-  /*
   const geocodeWithGeocodioOptimized = useCallback(
     async (
       address: string,
@@ -1115,13 +940,6 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       city: string,
       county: string
     ): Promise<OptimizedGeocodioResult> => {
-      // Add delay before request to prevent rate limiting
-      if (OPTIMIZED_CONFIG.DELAY_BETWEEN_REQUESTS > 0) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, OPTIMIZED_CONFIG.DELAY_BETWEEN_REQUESTS)
-        );
-      }
-
       const startTime = performance.now();
 
       try {
@@ -1158,14 +976,10 @@ export function useMLSProcessorOptimized(userId?: string | null) {
 
             if (!response.ok) {
               if (response.status === 429) {
-                console.log("Geocodio rate limit hit, waiting 5 seconds...");
-                await new Promise((resolve) => setTimeout(resolve, 5000));
                 const error = new Error("Rate limited by Geocodio") as Error & {
                   name: string;
                 };
                 error.name = "AbortError";
-                // Add extra delay for rate limiting
-                await new Promise((resolve) => setTimeout(resolve, 5000)); // 5 second delay
                 throw error;
               }
               throw new Error(
@@ -1240,7 +1054,6 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       cacheGeocodingResult,
     ]
   );
-  */
 
   const getNeighborhoodFromGeminiOptimized = useCallback(
     async (
@@ -1249,17 +1062,6 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       city: string,
       county: string
     ): Promise<OptimizedGeminiResult> => {
-      // Add delay before request to prevent rate limiting
-      if (
-        OPTIMIZED_CONFIG.DELAY_BETWEEN_REQUESTS > 0 ||
-        OPTIMIZED_CONFIG.GEMINI_DELAY > 0
-      ) {
-        const delay =
-          OPTIMIZED_CONFIG.DELAY_BETWEEN_REQUESTS +
-          OPTIMIZED_CONFIG.GEMINI_DELAY;
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-
       const startTime = performance.now();
 
       try {
@@ -1291,28 +1093,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
 
             if (!response.ok) {
               if (response.status === 429) {
-                const errorBody = await response.text().catch(() => "");
-                const isMiddlewareRateLimit =
-                  errorBody.includes("geocoding_rate_limit") ||
-                  errorBody.includes("general_rate_limit");
-
-                if (isMiddlewareRateLimit) {
-                  addLog(
-                    "⚠️ Middleware rate limit hit - waiting 60 seconds...",
-                    "warning"
-                  );
-                  await new Promise((resolve) => setTimeout(resolve, 60000)); // Wait 60 seconds for middleware
-                } else {
-                  addLog(
-                    "⚠️ Gemini API rate limit hit - waiting 5 seconds...",
-                    "warning"
-                  );
-                  await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait 5 seconds for external API
-                }
-
-                const error = new Error(
-                  `Rate limited (${response.status})`
-                ) as Error & {
+                const error = new Error("Rate limited by Gemini") as Error & {
                   name: string;
                 };
                 error.name = "AbortError";
@@ -1366,11 +1147,9 @@ export function useMLSProcessorOptimized(userId?: string | null) {
         // Cache the result
         cacheGeminiResult(address, city, county, optimizedResult.data);
 
-        // Update both ref counter and state
-        apiCounters.current.geminiCount++;
         setStats((prev) => ({
           ...prev,
-          geminiCount: apiCounters.current.geminiCount,
+          geminiCount: prev.geminiCount + 1,
         }));
 
         return optimizedResult;
@@ -1391,7 +1170,6 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       batchConfig.retryDelayMs,
       getCachedGeminiResult,
       cacheGeminiResult,
-      addLog,
     ]
   );
 
@@ -1549,16 +1327,39 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                 ? "Cache"
                 : "Mapbox + Gemini";
         } else {
-          // Mapbox failed - Skip Geocodio fallback (doesn't provide neighborhood/community data)
-          // Instead, try to get neighborhood/community from Gemini even without coordinates
-          addLog(
-            `⚠️ Mapbox failed for: ${address} - Attempting Gemini for neighborhood data only`,
-            "warning"
+          // Fallback to Geocodio
+          const geocodioResult = await geocodeWithGeocodioOptimized(
+            address,
+            zip,
+            city,
+            county
           );
 
-          // Try Gemini for neighborhood and community data even without coordinates
-          if (!existingNeighborhoods || !existingCommunities) {
-            try {
+          if (geocodioResult.success && geocodioResult.data) {
+            result = {
+              ...result,
+              formatted_address: geocodioResult.data.formatted,
+              latitude: geocodioResult.data.latitude,
+              longitude: geocodioResult.data.longitude,
+              neighbourhood: geocodioResult.data.neighbourhood || undefined,
+              "House Number":
+                geocodioResult.data["House Number"] || houseNumber || "",
+              // Only use Geocodio neighborhood if not from Excel
+              neighborhoods:
+                existingNeighborhoods ||
+                geocodioResult.data.neighbourhood ||
+                result.neighborhoods,
+              neighborhood_source: existingNeighborhoods
+                ? "Excel"
+                : geocodioResult.cached
+                  ? "Cache"
+                  : "Geocodio",
+              cached_result: geocodioResult.cached || false,
+              api_source: "Geocodio Fallback",
+            };
+
+            // Try Gemini for community data only if not from Excel
+            if (!existingCommunities) {
               const geminiResult = await getNeighborhoodFromGeminiOptimized(
                 address,
                 zip,
@@ -1567,49 +1368,39 @@ export function useMLSProcessorOptimized(userId?: string | null) {
               );
 
               if (geminiResult.success && geminiResult.data) {
-                // Use Gemini neighborhood if not from Excel
-                if (!existingNeighborhoods && geminiResult.data.neighborhood) {
+                // Only use Gemini neighborhood if not from Excel and not from Geocodio
+                if (
+                  !existingNeighborhoods &&
+                  geminiResult.data.neighborhood &&
+                  !geocodioResult.data.neighbourhood
+                ) {
                   result.neighborhoods = geminiResult.data.neighborhood;
                   result.neighborhood_source = geminiResult.cached
                     ? "Cache"
                     : "Gemini";
                 }
 
-                // Use Gemini community if not from Excel
-                if (!existingCommunities && geminiResult.data.community) {
-                  const communityValue = geminiResult.data.community;
-                  result.comunidades = communityValue;
-                  result["Community"] = communityValue;
-                  result["Community Source"] = geminiResult.cached
-                    ? "Cache"
-                    : "Gemini";
-                  result.community_source = geminiResult.cached
-                    ? "Cache"
-                    : "Gemini";
-                }
-
-                result.api_source = "Gemini Only (No Coordinates)";
-                addLog(
-                  `✅ Got neighborhood/community from Gemini for: ${address}`,
-                  "info"
-                );
-              } else {
-                addLog(`❌ Gemini also failed for: ${address}`, "error");
+                // Use Gemini community
+                const communityValue =
+                  geminiResult.data.community || result["Community"];
+                result.comunidades = communityValue;
+                result["Community"] = communityValue;
+                result["Community Source"] = geminiResult.cached
+                  ? "Cache"
+                  : "Gemini";
+                result.community_source = geminiResult.cached
+                  ? "Cache"
+                  : "Gemini";
               }
-            } catch (geminiError) {
-              addLog(
-                `❌ Gemini error for: ${address} - ${(geminiError as Error).message}`,
-                "error"
-              );
             }
+          } else {
+            // All geocoding failed
+            result.status = "error";
+            result.error = `All geocoding services failed: Mapbox: ${mapboxResult.error}, Geocodio: ${geocodioResult.error}`;
+            result.api_source = "Failed";
+            // Still try to extract house number even on failure
+            result["House Number"] = houseNumber || "";
           }
-
-          // Mark as error since we couldn't get coordinates (main requirement)
-          result.status = "error";
-          result.error = `Geocoding failed: ${mapboxResult.error}. No coordinates available.`;
-          result.api_source = result.api_source || "Failed";
-          // Still try to extract house number even on failure
-          result["House Number"] = houseNumber || "";
         }
 
         const processingTime = performance.now() - startTime;
@@ -1635,7 +1426,11 @@ export function useMLSProcessorOptimized(userId?: string | null) {
         };
       }
     },
-    [geocodeWithMapboxOptimized, getNeighborhoodFromGeminiOptimized, addLog]
+    [
+      geocodeWithMapboxOptimized,
+      geocodeWithGeocodioOptimized,
+      getNeighborhoodFromGeminiOptimized,
+    ]
   );
 
   // ===================================================================
@@ -1645,12 +1440,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
   const processAddressesBatch = useCallback(
     async (
       addressDataList: MLSData[],
-      detectedCols: DetectedColumns,
-      options?: {
-        continueFromIndex?: number;
-        totalOriginalRecords?: number;
-        existingResults?: ProcessedResult[];
-      }
+      detectedCols: DetectedColumns
     ): Promise<void> => {
       if (!addressDataList.length || shouldStopProcessing.current) return;
 
@@ -1681,35 +1471,22 @@ export function useMLSProcessorOptimized(userId?: string | null) {
         }
       }, OPTIMIZED_CONFIG.MEMORY_CLEANUP_INTERVAL);
 
-      const totalRecords =
-        options?.totalOriginalRecords || addressDataList.length;
-      const totalBatches = Math.ceil(
-        addressDataList.length / batchConfig.batchSize
-      );
-      const startingIndex = options?.continueFromIndex || 0;
-      let processedCount = startingIndex; // Start from where we left off
+      const totalRecords = addressDataList.length;
+      const totalBatches = Math.ceil(totalRecords / batchConfig.batchSize);
+      let processedCount = 0;
       let successCount = 0;
 
-      // Initialize with existing results if continuing
-      const allProcessedResults: ProcessedResult[] = [
-        ...(options?.existingResults || []),
-      ];
+      // Local array to accumulate all results for auto-save
+      const allProcessedResults: ProcessedResult[] = [];
 
       addLog(
-        `🚀 ${options?.continueFromIndex ? "Continuing" : "Starting"} OPTIMIZED processing: ${addressDataList.length} ${options?.continueFromIndex ? "remaining" : ""} records in ${totalBatches} batches`,
+        `🚀 Starting LARGE DATASET processing: ${totalRecords} records in ${totalBatches} batches`,
         "info"
       );
       addLog(
-        `⚙️ Pipeline: Mapbox (coordinates) + Gemini (neighborhoods/communities) - ${batchConfig.concurrencyLimit} concurrent, ${batchConfig.batchSize} batch size`,
+        `⚙️ 100K+ Config: ${batchConfig.concurrencyLimit} concurrent, ${batchConfig.batchSize} batch size (optimized for stability)`,
         "info"
       );
-
-      if (options?.continueFromIndex) {
-        addLog(
-          `🔄 Continuing from record ${startingIndex + 1}/${totalRecords} (${addressDataList.length} remaining)`,
-          "info"
-        );
-      }
 
       if (totalRecords > 50000) {
         addLog(
@@ -1744,7 +1521,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
             limit(async () => {
               if (shouldStopProcessing.current) return null;
 
-              const globalIndex = startingIndex + startIdx + localIndex; // Include starting index for continuation
+              const globalIndex = startIdx + localIndex;
               const address = addressData[detectedCols.address!] as string;
 
               // Update progress
@@ -1843,50 +1620,29 @@ export function useMLSProcessorOptimized(userId?: string | null) {
         const finalTime = Date.now() - startTime.current;
         const finalThroughput = processedCount / (finalTime / 1000);
 
-        // Check if processing was completed naturally (100%) or stopped manually
-        const wasCompletedNaturally =
-          !shouldStopProcessing.current && processedCount === totalRecords;
-        const wasStoppedManually = shouldStopProcessing.current;
-
-        if (wasStoppedManually) {
-          addLog(
-            `⏹️ Processing stopped manually at ${processedCount}/${totalRecords} records (${Math.round((processedCount / totalRecords) * 100)}%)`,
-            "warning"
-          );
-        } else {
-          addLog(
-            `🎉 Batch processing completed! ${processedCount} records processed in ${Math.round(finalTime / 1000)}s (${Math.round(finalThroughput)} rec/s)`,
-            "success"
-          );
-        }
+        addLog(
+          `🎉 Batch processing completed! ${processedCount} records processed in ${Math.round(finalTime / 1000)}s (${Math.round(finalThroughput)} rec/s)`,
+          "success"
+        );
 
         addLog(
           `📊 Final Stats: ${successCount}/${processedCount} success (${((successCount / processedCount) * 100).toFixed(1)}%), ${performanceMetrics.current.cacheHitCount} cache hits`,
           "performance"
         );
 
-        // 🔥 IMPORTANT: Only auto-save to storage if processing completed naturally (100%)
-        // Do NOT auto-save partial results when user stops manually
-        console.log("🔍 AUTO-SAVE ELIGIBILITY CHECK:");
-        console.log("   wasCompletedNaturally:", wasCompletedNaturally);
-        console.log("   wasStoppedManually:", wasStoppedManually);
+        // Auto-save completed file to Supabase Storage
+        console.log("🔍 AUTO-SAVE CHECK:");
         console.log("   processedCount:", processedCount);
-        console.log("   totalRecords:", totalRecords);
         console.log(
-          "   shouldStopProcessing.current:",
-          shouldStopProcessing.current
+          "   allProcessedResults.length:",
+          allProcessedResults.length
         );
+        console.log("   userId:", userId);
+        console.log("   fileData?.fileName:", fileData?.fileName);
 
-        if (
-          wasCompletedNaturally &&
-          processedCount > 0 &&
-          allProcessedResults.length > 0
-        ) {
-          addLog(
-            "💾 Auto-saving completed file to storage (100% processed)...",
-            "info"
-          );
-          console.log("🚀 AUTO-SAVE STARTING - Processing completed at 100%!");
+        if (processedCount > 0 && allProcessedResults.length > 0) {
+          addLog("💾 Auto-saving processed file to storage...", "info");
+          console.log("🚀 AUTO-SAVE STARTING - All conditions met!");
 
           try {
             const autoSaveResult = await autoSave.autoSaveResults({
@@ -1899,9 +1655,9 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                 successRate: `${((successCount / processedCount) * 100).toFixed(1)}%`,
                 throughputPerSecond: finalThroughput,
                 avgProcessingTimeMs: finalTime / processedCount,
-                mapboxCount: apiCounters.current.mapboxCount,
-                geocodioCount: apiCounters.current.geocodioCount,
-                geminiCount: apiCounters.current.geminiCount,
+                mapboxCount: stats.mapboxCount,
+                geocodioCount: stats.geocodioCount,
+                geminiCount: stats.geminiCount,
                 cacheHits: performanceMetrics.current.cacheHitCount,
                 totalProcessingTimeMs: finalTime,
                 batchesCompleted: totalBatches,
@@ -1923,17 +1679,6 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                   "info"
                 );
               }
-              // Show success modal only when processing completed at 100% and auto-saved
-              setShowSuccessModal(true);
-
-              // 🔥 IMPORTANT: Clear saved progress when processing completes successfully
-              // This prevents the "Resume Previous Session" modal from appearing later
-              clearProgress();
-              localStorage.removeItem("optimized-api-counters");
-              addLog(
-                "🧹 Cleared saved progress - processing completed successfully",
-                "info"
-              );
             } else {
               addLog(`⚠️ Auto-save failed: ${autoSaveResult.error}`, "warning");
             }
@@ -1943,18 +1688,6 @@ export function useMLSProcessorOptimized(userId?: string | null) {
               "error"
             );
           }
-        } else if (wasStoppedManually) {
-          addLog(
-            "ℹ️ Auto-save skipped - processing was stopped manually. Use 'Download Current Results' to save partial data.",
-            "info"
-          );
-          console.log("⏹️ AUTO-SAVE SKIPPED - Processing was stopped manually");
-        } else {
-          addLog(
-            "ℹ️ Auto-save skipped - no data to save or processing incomplete.",
-            "info"
-          );
-          console.log("❌ AUTO-SAVE SKIPPED - Conditions not met");
         }
       } catch (error) {
         addLog(
@@ -1983,7 +1716,8 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       addLog,
       autoSave,
       fileData,
-      clearProgress,
+      stats,
+      userId,
     ]
   );
 
@@ -2403,86 +2137,40 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       return;
     }
 
-    // 🔥 IMPORTANT: Only clear previous results when NOT continuing from recovery
-    // This prevents losing recovery data but cleans up for fresh starts
-    if (!isContinuingFromRecovery) {
-      console.log("🧹 Fresh start - clearing all previous data");
-      setResults([]);
-      resultsRef.current = [];
-      setStats({
-        totalProcessed: 0,
-        successRate: "0%",
-        throughputPerSecond: 0,
-        avgProcessingTimeMs: 0,
-        mapboxCount: 0,
-        geocodioCount: 0,
-        geminiCount: 0,
-        cacheHits: 0,
-        totalProcessingTimeMs: 0,
-        batchesCompleted: 0,
-        currentBatchSize: 0,
-        estimatedTimeRemaining: "Calculating...",
-      });
+    // Clear all caches before starting fresh processing
+    geocodingCache.current.clear();
+    geminiCache.current.clear();
 
-      // Reset performance metrics
-      performanceMetrics.current = {
-        totalRequests: 0,
-        totalProcessingTime: 0,
-        cacheHitCount: 0,
-        errorCount: 0,
-        rateLimitCount: 0,
-      };
-
-      // 🔥 IMPORTANT: Reset API counters ref on fresh start
-      apiCounters.current = {
-        mapboxCount: 0,
-        geocodioCount: 0,
-        geminiCount: 0,
-        mapboxCalls: 0,
-        geminiCalls: 0,
-      };
-
-      // Clear all caches ONLY on fresh start
-      geocodingCache.current.clear();
-      geminiCache.current.clear();
-
-      // Clear localStorage caches too
-      try {
-        localStorage.removeItem(OPTIMIZED_CACHE_KEY);
-        localStorage.removeItem(OPTIMIZED_GEMINI_CACHE_KEY);
-      } catch (error) {
-        console.warn("Failed to clear localStorage cache:", error);
+    // Clear localStorage caches too
+    try {
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (
+          key &&
+          (key.includes("mls_") ||
+            key.includes("gemini_") ||
+            key.includes("geocoding_"))
+        ) {
+          keysToRemove.push(key);
+        }
       }
-
-      addLog("🧹 Cleared all caches before starting fresh processing", "info");
-    } else {
+      keysToRemove.forEach((key) => localStorage.removeItem(key));
       console.log(
-        "🔄 Continuing from recovery - preserving existing data and cache"
+        "🧹 [DEBUG] Cleared localStorage keys before processing:",
+        keysToRemove
       );
-      // Reset the flag after checking
-      setIsContinuingFromRecovery(false);
-
-      // Log cache status when continuing
-      const geocodingCacheSize = geocodingCache.current.size();
-      const geminiCacheSize = geminiCache.current.size();
-      addLog(
-        `💾 Preserving cache: ${geocodingCacheSize} geocoding + ${geminiCacheSize} gemini entries`,
-        "info"
-      );
+    } catch (error) {
+      console.warn("Could not clear localStorage:", error);
     }
 
+    addLog("🧹 Cleared all caches before starting fresh processing", "info");
     addLog(
       `🚀 Starting optimized processing of ${fileData.data.length} records`,
       "info"
     );
     processAddressesBatch(fileData.data, detectedColumns);
-  }, [
-    fileData,
-    detectedColumns,
-    processAddressesBatch,
-    addLog,
-    isContinuingFromRecovery,
-  ]);
+  }, [fileData, detectedColumns, processAddressesBatch, addLog]);
 
   const stopProcessing = useCallback(() => {
     console.log(
@@ -2555,22 +2243,12 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       rateLimitCount: 0,
     };
 
-    // 🔥 IMPORTANT: Reset API counters ref
-    apiCounters.current = {
-      mapboxCount: 0,
-      geocodioCount: 0,
-      geminiCount: 0,
-      mapboxCalls: 0,
-      geminiCalls: 0,
-    };
-
     // Clear caches
     geocodingCache.current.clear();
     geminiCache.current.clear();
 
     // Clear localStorage
     clearProgress();
-    localStorage.removeItem("optimized-api-counters");
 
     // Close modal if open
     setShowStopModal(false);
@@ -2710,39 +2388,6 @@ export function useMLSProcessorOptimized(userId?: string | null) {
           "info"
         );
       }
-
-      // Load cached data from localStorage
-      try {
-        const geocodingCacheString = localStorage.getItem(OPTIMIZED_CACHE_KEY);
-        const geminiCacheString = localStorage.getItem(
-          OPTIMIZED_GEMINI_CACHE_KEY
-        );
-
-        if (geocodingCacheString) {
-          const cacheData = JSON.parse(geocodingCacheString);
-          if (cacheData.geocoding) {
-            const loadedCount = geocodingCache.current.importEntries(
-              cacheData.geocoding
-            );
-            if (loadedCount > 0) {
-              addLog(
-                `💾 Loaded ${loadedCount} geocoding cache entries`,
-                "info"
-              );
-            }
-          }
-        }
-
-        if (geminiCacheString) {
-          const geminiData = JSON.parse(geminiCacheString);
-          const loadedCount = geminiCache.current.importEntries(geminiData);
-          if (loadedCount > 0) {
-            addLog(`💾 Loaded ${loadedCount} gemini cache entries`, "info");
-          }
-        }
-      } catch (error) {
-        console.warn("Failed to load cache from localStorage:", error);
-      }
     }
   }, [loadProgress, addLog]);
 
@@ -2866,28 +2511,6 @@ export function useMLSProcessorOptimized(userId?: string | null) {
     setResults(recoveryData.results);
     setStats(recoveryData.stats);
     setDetectedColumns(recoveryData.detectedColumns);
-
-    // 🔥 IMPORTANT: Restore API counters to ref to maintain consistency
-    apiCounters.current.mapboxCount = recoveryData.stats.mapboxCount;
-    apiCounters.current.geocodioCount = recoveryData.stats.geocodioCount;
-    apiCounters.current.geminiCount = recoveryData.stats.geminiCount;
-
-    // Also restore API counters from localStorage if available
-    try {
-      const savedApiCounters = localStorage.getItem("optimized-api-counters");
-      if (savedApiCounters) {
-        const parsedCounters = JSON.parse(savedApiCounters);
-        apiCounters.current.mapboxCalls = parsedCounters.mapboxCalls || 0;
-        apiCounters.current.geminiCalls = parsedCounters.geminiCalls || 0;
-        addLog(
-          `🔄 Restored API counters: Mapbox: ${apiCounters.current.mapboxCalls}, Gemini: ${apiCounters.current.geminiCalls}`,
-          "info"
-        );
-      }
-    } catch (error) {
-      console.warn("Failed to restore API counters:", error);
-    }
-
     setFileData({
       data: recoveryData.validAddresses,
       columns: Object.keys(recoveryData.validAddresses[0] || {}),
@@ -2913,31 +2536,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       "🔄 After continue - resultsRef.current.length:",
       resultsRef.current.length
     );
-
-    // Automatically start processing after a brief delay to let state update
-    setTimeout(() => {
-      const remainingAddresses = recoveryData.validAddresses.slice(
-        recoveryData.currentIndex
-      );
-      if (remainingAddresses.length > 0) {
-        addLog(
-          `🚀 Auto-continuing processing from record ${recoveryData.currentIndex + 1}/${recoveryData.totalAddresses}`,
-          "info"
-        );
-        processAddressesBatch(
-          remainingAddresses,
-          recoveryData.detectedColumns,
-          {
-            continueFromIndex: recoveryData.currentIndex,
-            totalOriginalRecords: recoveryData.totalAddresses,
-            existingResults: recoveryData.results,
-          }
-        );
-      } else {
-        addLog("✅ All records already processed!", "success");
-      }
-    }, 100);
-  }, [recoveryData, clearProgress, addLog, processAddressesBatch]);
+  }, [recoveryData, clearProgress, addLog]);
 
   // Discard saved progress and start fresh
   const discardProgress = useCallback(() => {
@@ -2967,42 +2566,21 @@ export function useMLSProcessorOptimized(userId?: string | null) {
 
   // Modal control functions
   const closeStopModal = useCallback(() => {
-    // Only save progress if processing was stopped mid-way (not completed)
+    // Save progress before closing modal
     if (results.length > 0 && fileData) {
-      const progressPercentage = (results.length / fileData.data.length) * 100;
-
-      // Only save progress if not completed (less than 100%)
-      if (progressPercentage < 100) {
-        saveProgress(
-          results,
-          results.length,
-          fileData.data.length,
-          fileData.fileName,
-          stats,
-          detectedColumns,
-          fileData.data
-        );
-        addLog("💾 Progress saved automatically", "info");
-      } else {
-        // If 100% completed but user clicked STOP, clear progress instead
-        clearProgress();
-        localStorage.removeItem("optimized-api-counters");
-        addLog(
-          "🧹 Cleared progress - processing was already completed",
-          "info"
-        );
-      }
+      saveProgress(
+        results,
+        results.length,
+        fileData.data.length,
+        fileData.fileName,
+        stats,
+        detectedColumns,
+        fileData.data
+      );
+      addLog("💾 Progress saved automatically", "info");
     }
     setShowStopModal(false);
-  }, [
-    results,
-    fileData,
-    stats,
-    detectedColumns,
-    saveProgress,
-    addLog,
-    clearProgress,
-  ]);
+  }, [results, fileData, stats, detectedColumns, saveProgress, addLog]);
 
   const closeRecoveryModal = useCallback(() => {
     setShowRecoveryModal(false);
@@ -3010,11 +2588,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
 
   const closeSuccessModal = useCallback(() => {
     setShowSuccessModal(false);
-    // 🔥 IMPORTANT: Clear any residual progress when success modal is closed
-    // This ensures no leftover data can trigger "Resume Previous Session"
-    clearProgress();
-    localStorage.removeItem("optimized-api-counters");
-  }, [clearProgress]);
+  }, []);
 
   // Test function for beforeunload (development only)
   const testBeforeUnload = useCallback(() => {
