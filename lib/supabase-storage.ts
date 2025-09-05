@@ -169,7 +169,7 @@ export function convertToExcelBuffer(results: ProcessedResult[]): ArrayBuffer {
     // Reorganized columns in the exact order requested
     Address: safeString(result.original_address),
     "Zip Code": safeString(result["Zip Code"] || result.zip),
-    City: safeString(result.City || result.city),
+    City: safeString(result.City || result["City Name"] || result.city),
     County: safeString(result.County || result.county),
     "House Number": safeString(result["House Number"]),
     Latitude: safeString(result.latitude),
