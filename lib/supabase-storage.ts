@@ -122,6 +122,32 @@ export async function ensureStorageBucketExists(): Promise<void> {
  * Convert processed results to Excel file buffer
  */
 export function convertToExcelBuffer(results: ProcessedResult[]): ArrayBuffer {
+  console.log("📊 Starting Excel conversion for", results.length, "results");
+
+  if (!results || results.length === 0) {
+    console.warn("⚠️ No results to convert to Excel");
+    // Create empty workbook with headers
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      [
+        "Original Address",
+        "Status",
+        "Formatted Address",
+        "Latitude",
+        "Longitude",
+        "Neighborhood",
+        "Community",
+      ],
+    ]);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "MLS Processed Data");
+    const buffer = XLSX.write(workbook, {
+      type: "array",
+      bookType: "xlsx",
+      compression: true,
+    });
+    return buffer;
+  }
+
   // Prepare data for Excel with clean column names
   const excelData = results.map((result) => ({
     // Clean up and format all fields for Excel
@@ -183,6 +209,8 @@ export function convertToExcelBuffer(results: ProcessedResult[]): ArrayBuffer {
     ),
   }));
 
+  console.log("📊 Transformed", excelData.length, "rows for Excel");
+
   // Create workbook and worksheet
   const workbook = XLSX.utils.book_new();
   const worksheet = XLSX.utils.json_to_sheet(excelData);
@@ -196,14 +224,23 @@ export function convertToExcelBuffer(results: ProcessedResult[]): ArrayBuffer {
   // Add worksheet to workbook
   XLSX.utils.book_append_sheet(workbook, worksheet, "MLS Processed Data");
 
-  // Convert to buffer
+  console.log("📊 Workbook created, converting to buffer...");
+
+  // Convert to buffer - XLSX.write with type "array" returns ArrayBuffer directly
   const excelBuffer = XLSX.write(workbook, {
     type: "array",
     bookType: "xlsx",
     compression: true,
   });
 
-  return excelBuffer.buffer;
+  console.log(
+    "✅ Excel buffer generated:",
+    (excelBuffer.length / 1024).toFixed(2),
+    "KB"
+  );
+
+  // Return the ArrayBuffer directly (not .buffer property)
+  return excelBuffer;
 }
 
 /**
@@ -241,13 +278,24 @@ export async function uploadProcessedFile(
 
     // Convert to Excel buffer
     console.log("📊 Converting to Excel buffer...");
-    const excelBuffer = convertToExcelBuffer(results);
-    const fileBuffer = new Uint8Array(excelBuffer);
+    const excelArrayBuffer = convertToExcelBuffer(results);
+
+    // Convert ArrayBuffer to Uint8Array for Supabase
+    const fileBuffer = new Uint8Array(excelArrayBuffer);
     console.log(
       "✅ Excel buffer created:",
       (fileBuffer.length / 1024).toFixed(2),
       "KB"
     );
+
+    // Validate buffer size
+    if (fileBuffer.length === 0) {
+      console.error("❌ Generated buffer is empty!");
+      return {
+        success: false,
+        error: "Generated Excel file is empty",
+      };
+    }
 
     // Generate unique filename
     const storageFilename = generateStorageFilename(
@@ -262,13 +310,15 @@ export async function uploadProcessedFile(
       (fileBuffer.length / 1024 / 1024).toFixed(2),
       "MB"
     );
+    console.log("📊 Buffer length:", fileBuffer.length, "bytes");
 
-    // Upload to storage
+    // Upload to storage with explicit headers
     const { data: uploadData, error: uploadError } = await admin.storage
       .from(STORAGE_BUCKET)
       .upload(storagePath, fileBuffer, {
         contentType:
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        cacheControl: "3600", // Cache for 1 hour
         upsert: false, // Don't overwrite existing files
       });
 
@@ -281,6 +331,7 @@ export async function uploadProcessedFile(
     }
 
     console.log("✅ Excel file uploaded successfully:", uploadData.path);
+    console.log("✅ Upload data:", uploadData);
 
     // Generate permanent public URL (no expiration since bucket is public)
     const { data: urlData } = admin.storage
