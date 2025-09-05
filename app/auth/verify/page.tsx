@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
@@ -16,7 +17,7 @@ const verifySchema = z.object({
 
 type VerifyForm = z.infer<typeof verifySchema>;
 
-export default function VerifyPage() {
+function VerifyContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -239,5 +240,13 @@ export default function VerifyPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function VerifyPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <VerifyContent />
+    </Suspense>
   );
 }
