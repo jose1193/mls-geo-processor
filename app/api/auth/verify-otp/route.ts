@@ -15,10 +15,17 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { email, otp } = verifyOTPSchema.parse(body);
 
-    console.log(`[VERIFY-OTP] Request from: ${request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'}`);
-    console.log(`[VERIFY-OTP] Email: ${email}, OTP: ${otp.substring(0, 2)}****`);
+    console.log(
+      `[VERIFY-OTP] Request from: ${request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown"}`
+    );
+    console.log(
+      `[VERIFY-OTP] Email: ${email}, OTP: ${otp.substring(0, 2)}****`
+    );
     console.log(`[VERIFY-OTP] Request URL: ${request.url}`);
-    console.log(`[VERIFY-OTP] Headers:`, Object.fromEntries(request.headers.entries()));
+    console.log(
+      `[VERIFY-OTP] Headers:`,
+      Object.fromEntries(request.headers.entries())
+    );
 
     const emailRateLimit = await applyEmailRateLimit(otpVerifyLimiter, email);
     if (!emailRateLimit.allowed) {

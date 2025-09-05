@@ -32,12 +32,13 @@ export default auth(async function middleware(request: NextRequest) {
   // Si usuario está logueado e intenta acceder al login, redirigir al dashboard
   if (session && pathname === "/") {
     // En producción, usar el dominio correcto de Railway
-    const baseUrl = process.env.NODE_ENV === "production" 
-      ? (process.env.AUTH_URL || process.env.NEXTAUTH_URL || request.url)
-      : request.url;
-    
+    const baseUrl =
+      process.env.NODE_ENV === "production"
+        ? process.env.AUTH_URL || process.env.NEXTAUTH_URL || request.url
+        : request.url;
+
     const dashboardUrl = new URL("/dashboard", baseUrl);
-    
+
     if (process.env.NODE_ENV === "production") {
       console.log(
         `[MIDDLEWARE] Redirecting authenticated user to dashboard: ${dashboardUrl.href}`
@@ -138,10 +139,11 @@ export default auth(async function middleware(request: NextRequest) {
   // Redirigir a login si no está autenticado
   if (!session) {
     // En producción, usar el dominio correcto de Railway
-    const baseUrl = process.env.NODE_ENV === "production" 
-      ? (process.env.AUTH_URL || process.env.NEXTAUTH_URL || request.url)
-      : request.url;
-    
+    const baseUrl =
+      process.env.NODE_ENV === "production"
+        ? process.env.AUTH_URL || process.env.NEXTAUTH_URL || request.url
+        : request.url;
+
     const loginUrl = new URL("/", baseUrl);
     loginUrl.searchParams.set("callbackUrl", pathname);
 

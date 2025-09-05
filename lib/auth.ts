@@ -62,8 +62,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             body: JSON.stringify({ email, otp }),
           });
 
-          console.log(`[AUTH] Verify response status: ${verifyResponse.status}`);
-          
+          console.log(
+            `[AUTH] Verify response status: ${verifyResponse.status}`
+          );
+
           if (!verifyResponse.ok) {
             const errorText = await verifyResponse.text();
             console.log(`[AUTH] Verify response error: ${errorText}`);

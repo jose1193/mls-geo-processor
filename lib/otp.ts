@@ -28,7 +28,7 @@ export async function storeOTP(email: string, code: string): Promise<boolean> {
   try {
     console.log(`[OTP-STORE] Storing OTP for email: ${email}`);
     console.log(`[OTP-STORE] Code: ${code.substring(0, 2)}****`);
-    
+
     // Check if Supabase admin client is available
     if (!supabaseAdmin) {
       console.error("[OTP-STORE] Supabase admin client not available");
@@ -47,7 +47,9 @@ export async function storeOTP(email: string, code: string): Promise<boolean> {
       .eq("email", email);
 
     if (deleteError) {
-      console.log(`[OTP-STORE] Error cleaning previous codes: ${deleteError.message}`);
+      console.log(
+        `[OTP-STORE] Error cleaning previous codes: ${deleteError.message}`
+      );
     } else {
       console.log(`[OTP-STORE] Previous codes cleaned for ${email}`);
     }
@@ -66,7 +68,9 @@ export async function storeOTP(email: string, code: string): Promise<boolean> {
       return false;
     }
 
-    console.log(`[OTP-STORE] OTP stored successfully for ${email}, expires at ${expiresAt}`);
+    console.log(
+      `[OTP-STORE] OTP stored successfully for ${email}, expires at ${expiresAt}`
+    );
     return true;
   } catch (error) {
     console.error("Error in storeOTP:", error);
@@ -84,7 +88,7 @@ export async function validateOTP(
   try {
     console.log(`[OTP-VALIDATE] Starting validation for email: ${email}`);
     console.log(`[OTP-VALIDATE] Code: ${code.substring(0, 2)}****`);
-    
+
     // Check if Supabase admin client is available
     if (!supabaseAdmin) {
       console.error("[OTP-VALIDATE] Supabase admin client not available");
@@ -99,7 +103,10 @@ export async function validateOTP(
       .eq("used", false)
       .single();
 
-    console.log(`[OTP-VALIDATE] Database query result:`, { otpData, fetchError });
+    console.log(`[OTP-VALIDATE] Database query result:`, {
+      otpData,
+      fetchError,
+    });
 
     if (fetchError || !otpData) {
       console.log("No OTP found for email:", email);
