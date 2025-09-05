@@ -20,18 +20,21 @@ export const generalAPILimiter = new RateLimiterMemory({
   blockDuration: 60, // Bloquear por 1 minuto
 });
 
-// Rate limiter específico para APIs de geocoding (más permisivo)
+// Rate limiter específico para APIs de geocoding (adaptativo según ambiente)
+const isRailway = process.env.RAILWAY_ENVIRONMENT === "production" || 
+                 process.env.NODE_ENV === "production";
+
 export const geocodingAPILimiter = new RateLimiterMemory({
-  points: 1000, // 1000 requests para geocoding
-  duration: 900, // Por 15 minutos (mayor capacidad para MLS processing)
-  blockDuration: 30, // Bloquear por 30 segundos (menos tiempo de bloqueo)
+  points: isRailway ? 5000 : 500, // Railway: 5000 requests vs localhost: 500
+  duration: 900, // Por 15 minutos
+  blockDuration: isRailway ? 10 : 30, // Railway: bloqueo más corto
 });
 
 // Rate limiter muy permisivo para APIs de MLS processing (auto-save, completed files, etc.)
 export const mlsProcessingAPILimiter = new RateLimiterMemory({
-  points: 500, // 500 requests para MLS processing APIs
+  points: isRailway ? 2000 : 300, // Railway: 2000 vs localhost: 300
   duration: 900, // Por 15 minutos
-  blockDuration: 10, // Bloquear por solo 10 segundos
+  blockDuration: isRailway ? 5 : 15, // Railway: bloqueo mucho más corto
 });
 
 // Función helper para obtener IP del request
