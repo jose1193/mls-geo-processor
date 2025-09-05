@@ -37,13 +37,13 @@ export async function POST(request: NextRequest) {
     const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodedAddress}.json?access_token=${mapboxToken}&country=us&types=address,place,locality,neighborhood&limit=1&autocomplete=false`;
 
     console.log(`[MAPBOX-API] Geocoding: ${address.substring(0, 50)}...`);
-    
+
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'MLS-Geo-Processor/1.0'
-      }
+        "User-Agent": "MLS-Geo-Processor/1.0",
+      },
     });
-    
+
     let data: unknown = null;
     try {
       data = await response.json();
@@ -54,26 +54,28 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       const status = response.status;
       const baseError = `Mapbox API error: ${status}`;
-      
+
       // Log para debugging rate limits
       console.warn(`[MAPBOX-API] Error ${status} for address: ${address}`);
-      
+
       // Si es 429, incluir información específica
       if (status === 429) {
-        const retryAfter = response.headers.get('Retry-After');
-        console.warn(`[MAPBOX-API] Rate limited. Retry after: ${retryAfter} seconds`);
-        
+        const retryAfter = response.headers.get("Retry-After");
+        console.warn(
+          `[MAPBOX-API] Rate limited. Retry after: ${retryAfter} seconds`
+        );
+
         return NextResponse.json(
           {
             success: false,
             error: "Rate limit exceeded",
             status: 429,
-            retryAfter: retryAfter ? parseInt(retryAfter) : 60
+            retryAfter: retryAfter ? parseInt(retryAfter) : 60,
           },
           { status: 429 }
         );
       }
-      
+
       // Pass through specific status (401 usually invalid / restricted token)
       return NextResponse.json(
         {

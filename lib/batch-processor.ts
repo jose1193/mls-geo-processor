@@ -29,14 +29,15 @@ export class BatchProcessor {
   }
 
   private detectEnvironment(): ProcessingEnvironment {
-    const isRailway = process.env.RAILWAY_ENVIRONMENT === "production" || 
-                     process.env.NODE_ENV === "production";
-    
+    const isRailway =
+      process.env.RAILWAY_ENVIRONMENT === "production" ||
+      process.env.NODE_ENV === "production";
+
     // Railway: 8GB RAM, 8 vCPU vs Localhost: menor capacidad
     return {
       isRailway,
       availableMemory: isRailway ? 8192 : 2048, // MB
-      cpuCores: isRailway ? 8 : 4
+      cpuCores: isRailway ? 8 : 4,
     };
   }
 
@@ -45,45 +46,52 @@ export class BatchProcessor {
       // Configuración agresiva para Railway
       return {
         maxBatchSize: 50, // Batches más grandes
-        concurrency: 8,   // Más requests simultáneos
+        concurrency: 8, // Más requests simultáneos
         delayBetweenBatches: 100, // Menor delay
         retryAttempts: 5,
-        retryDelay: 1000
+        retryDelay: 1000,
       };
     } else {
       // Configuración conservadora para localhost
       return {
         maxBatchSize: 10, // Batches más pequeños
-        concurrency: 3,   // Menos concurrent requests
+        concurrency: 3, // Menos concurrent requests
         delayBetweenBatches: 500, // Mayor delay
         retryAttempts: 3,
-        retryDelay: 2000
+        retryDelay: 2000,
       };
     }
   }
 
   async processBatch<T, R>(
-    items: T[], 
+    items: T[],
     processor: (item: T) => Promise<R>,
     onProgress?: (processed: number, total: number, errors: number) => void
-  ): Promise<{ results: R[], errors: BatchError[] }> {
+  ): Promise<{ results: R[]; errors: BatchError[] }> {
     const results: R[] = [];
     const errors: BatchError[] = [];
     let processed = 0;
 
-    console.log(`[BATCH-PROCESSOR] Starting batch processing on ${this.environment.isRailway ? 'Railway' : 'localhost'}`);
+    console.log(
+      `[BATCH-PROCESSOR] Starting batch processing on ${this.environment.isRailway ? "Railway" : "localhost"}`
+    );
     console.log(`[BATCH-PROCESSOR] Config: ${JSON.stringify(this.config)}`);
     console.log(`[BATCH-PROCESSOR] Total items: ${items.length}`);
 
     // Dividir en chunks
     for (let i = 0; i < items.length; i += this.config.maxBatchSize) {
       const chunk = items.slice(i, i + this.config.maxBatchSize);
-      
-      console.log(`[BATCH-PROCESSOR] Processing chunk ${Math.floor(i / this.config.maxBatchSize) + 1}/${Math.ceil(items.length / this.config.maxBatchSize)}`);
+
+      console.log(
+        `[BATCH-PROCESSOR] Processing chunk ${Math.floor(i / this.config.maxBatchSize) + 1}/${Math.ceil(items.length / this.config.maxBatchSize)}`
+      );
 
       // Procesar chunk con concurrencia limitada
-      const chunkResults = await this.processChunkWithConcurrency(chunk, processor);
-      
+      const chunkResults = await this.processChunkWithConcurrency(
+        chunk,
+        processor
+      );
+
       results.push(...chunkResults.results);
       errors.push(...chunkResults.errors);
       processed += chunk.length;
@@ -103,27 +111,30 @@ export class BatchProcessor {
   }
 
   private async processChunkWithConcurrency<T, R>(
-    chunk: T[], 
+    chunk: T[],
     processor: (item: T) => Promise<R>
-  ): Promise<{ results: R[], errors: BatchError[] }> {
+  ): Promise<{ results: R[]; errors: BatchError[] }> {
     const results: R[] = [];
     const errors: BatchError[] = [];
 
     // Dividir chunk en grupos para concurrencia limitada
     for (let i = 0; i < chunk.length; i += this.config.concurrency) {
       const group = chunk.slice(i, i + this.config.concurrency);
-      
+
       const promises = group.map(async (item, index) => {
         return this.processWithRetry(item, processor, index);
       });
 
       const groupResults = await Promise.allSettled(promises);
-      
+
       groupResults.forEach((result, index) => {
-        if (result.status === 'fulfilled') {
+        if (result.status === "fulfilled") {
           results.push(result.value);
         } else {
-          console.error(`[BATCH-PROCESSOR] Error processing item ${i + index}:`, result.reason);
+          console.error(
+            `[BATCH-PROCESSOR] Error processing item ${i + index}:`,
+            result.reason
+          );
           errors.push({ index: i + index, error: result.reason });
         }
       });
@@ -138,7 +149,7 @@ export class BatchProcessor {
   }
 
   private async processWithRetry<T, R>(
-    item: T, 
+    item: T,
     processor: (item: T) => Promise<R>,
     index: number
   ): Promise<R> {
@@ -146,16 +157,27 @@ export class BatchProcessor {
       try {
         return await processor(item);
       } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        console.warn(`[BATCH-PROCESSOR] Attempt ${attempt}/${this.config.retryAttempts} failed for item ${index}:`, errorMessage);
-        
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[BATCH-PROCESSOR] Attempt ${attempt}/${this.config.retryAttempts} failed for item ${index}:`,
+          errorMessage
+        );
+
         // Si es error 429 (rate limit), usar delay exponencial
-        const hasRateLimit = (error && typeof error === 'object' && 'status' in error && error.status === 429) ||
-                            errorMessage.includes('429');
-        
+        const hasRateLimit =
+          (error &&
+            typeof error === "object" &&
+            "status" in error &&
+            error.status === 429) ||
+          errorMessage.includes("429");
+
         if (hasRateLimit) {
-          const backoffDelay = this.config.retryDelay * Math.pow(2, attempt - 1);
-          console.log(`[BATCH-PROCESSOR] Rate limit hit, backing off for ${backoffDelay}ms`);
+          const backoffDelay =
+            this.config.retryDelay * Math.pow(2, attempt - 1);
+          console.log(
+            `[BATCH-PROCESSOR] Rate limit hit, backing off for ${backoffDelay}ms`
+          );
           await setTimeout(backoffDelay);
         } else if (attempt < this.config.retryAttempts) {
           await setTimeout(this.config.retryDelay);
@@ -166,7 +188,7 @@ export class BatchProcessor {
         }
       }
     }
-    throw new Error('Max retries exceeded');
+    throw new Error("Max retries exceeded");
   }
 
   // Método para ajustar configuración dinámicamente

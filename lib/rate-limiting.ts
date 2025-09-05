@@ -21,8 +21,9 @@ export const generalAPILimiter = new RateLimiterMemory({
 });
 
 // Rate limiter específico para APIs de geocoding (adaptativo según ambiente)
-const isRailway = process.env.RAILWAY_ENVIRONMENT === "production" || 
-                 process.env.NODE_ENV === "production";
+const isRailway =
+  process.env.RAILWAY_ENVIRONMENT === "production" ||
+  process.env.NODE_ENV === "production";
 
 export const geocodingAPILimiter = new RateLimiterMemory({
   points: isRailway ? 5000 : 500, // Railway: 5000 requests vs localhost: 500
