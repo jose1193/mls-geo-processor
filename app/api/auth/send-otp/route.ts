@@ -47,6 +47,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check if Supabase admin client is available
+    if (!supabaseAdmin) {
+      return NextResponse.json(
+        { error: "Database connection not available" },
+        { status: 503 }
+      );
+    }
+
     // Verificar que el email está autorizado en la tabla de usuarios
     console.log(`🔍 Checking email in database: ${email}`);
     const { data: user, error: userError } = await supabaseAdmin
@@ -135,6 +143,14 @@ async function logSecurityEvent(
   details: Record<string, unknown> = {}
 ) {
   try {
+    // Check if Supabase admin client is available
+    if (!supabaseAdmin) {
+      console.warn(
+        "Cannot log security event: Supabase admin client not available"
+      );
+      return;
+    }
+
     const ip =
       request.headers.get("x-forwarded-for")?.split(",")[0] ||
       request.headers.get("x-real-ip") ||
