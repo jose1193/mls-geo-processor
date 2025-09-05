@@ -104,7 +104,13 @@ export default auth(async function middleware(request: NextRequest) {
   if (pathname.startsWith("/api/")) {
     // Validar origen para APIs sensibles
     if (apiPaths.some((path) => pathname.startsWith(path))) {
-      if (!validateRequestOrigin(request)) {
+      const userAgent = request.headers.get("user-agent") || "";
+      
+      // Permitir calls internos de NextAuth
+      if (userAgent.includes("NextAuth-Internal")) {
+        console.log(`[MIDDLEWARE] Allowing internal NextAuth call to ${pathname}`);
+      } else if (!validateRequestOrigin(request)) {
+        console.log(`[MIDDLEWARE] Blocking request to ${pathname} from unauthorized origin`);
         return new NextResponse(
           JSON.stringify({ error: "Unauthorized origin" }),
           {

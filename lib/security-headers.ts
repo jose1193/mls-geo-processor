@@ -110,18 +110,32 @@ export function validateRequestOrigin(
   const origin = request.headers.get("origin");
   const referer = request.headers.get("referer");
 
+  // En desarrollo, permitir cualquier origen
+  if (process.env.NODE_ENV === "development") {
+    return true;
+  }
+
+  // Para requests internos (sin origin/referer), permitir en producción también
   if (!origin && !referer) {
-    // Permitir requests sin origen (ej: Postman en desarrollo)
-    return process.env.NODE_ENV === "development";
+    return true;
   }
 
   const requestOrigin = origin || (referer ? new URL(referer).origin : "");
-  const siteUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  
+  // URLs permitidas en producción
+  const siteUrl = process.env.NEXTAUTH_URL || process.env.AUTH_URL || "http://localhost:3000";
+  const allowedDomains = [
+    siteUrl,
+    "https://mls-geo-processor-production.up.railway.app",
+    "http://localhost:3000",
+    "https://localhost:3000"
+  ];
 
-  const defaultAllowed = [siteUrl];
-  const allowed = [...defaultAllowed, ...allowedOrigins];
+  const defaultAllowed = [...allowedDomains, ...allowedOrigins];
 
-  return allowed.includes(requestOrigin);
+  console.log(`[ORIGIN-VALIDATION] Request origin: ${requestOrigin}, Allowed: ${defaultAllowed.join(', ')}`);
+  
+  return defaultAllowed.includes(requestOrigin);
 }
 
 // Middleware helper para aplicar todas las protecciones

@@ -3,12 +3,18 @@ import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET(request: NextRequest) {
   try {
+    console.log(`[DEBUG-OTP] Request received from: ${request.headers.get("x-forwarded-for") || "unknown"}`);
+    console.log(`[DEBUG-OTP] Request URL: ${request.url}`);
+    
     // Solo en desarrollo o con parámetro especial
     const { searchParams } = new URL(request.url);
     const email = searchParams.get("email");
     const debug = searchParams.get("debug");
 
+    console.log(`[DEBUG-OTP] Email: ${email}, Debug: ${debug}`);
+
     if (!email || debug !== "true") {
+      console.log(`[DEBUG-OTP] Access denied - missing email or debug parameter`);
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 

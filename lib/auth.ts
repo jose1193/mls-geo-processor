@@ -45,32 +45,46 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           }
 
           // Verificar OTP usando API interna
-          const baseUrl =
+          const baseUrl = 
             process.env.AUTH_URL ||
             process.env.NEXTAUTH_URL ||
-            (typeof window !== "undefined"
-              ? window.location.origin
-              : "http://localhost:3000");
+            (process.env.NODE_ENV === "production" 
+              ? "https://mls-geo-processor-production.up.railway.app"
+              : (typeof window !== "undefined"
+                ? window.location.origin
+                : "http://localhost:3000"));
 
           console.log(`[AUTH] Base URL for OTP verification: ${baseUrl}`);
           console.log(`[AUTH] ENV - AUTH_URL: ${process.env.AUTH_URL}`);
           console.log(`[AUTH] ENV - NEXTAUTH_URL: ${process.env.NEXTAUTH_URL}`);
+          console.log(`[AUTH] NODE_ENV: ${process.env.NODE_ENV}`);
 
           const verifyResponse = await fetch(`${baseUrl}/api/auth/verify-otp`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { 
+              "Content-Type": "application/json",
+              "User-Agent": "NextAuth-Internal"
+            },
             body: JSON.stringify({ email, otp }),
           });
 
           console.log(
             `[AUTH] Verify response status: ${verifyResponse.status}`
           );
+          console.log(
+            `[AUTH] Verify response headers:`, 
+            Object.fromEntries(verifyResponse.headers.entries())
+          );
 
           if (!verifyResponse.ok) {
             const errorText = await verifyResponse.text();
             console.log(`[AUTH] Verify response error: ${errorText}`);
+            console.log(`[AUTH] Response was not JSON, likely HTML or error page`);
             return null;
           }
+
+          const responseData = await verifyResponse.json();
+          console.log(`[AUTH] Verify response data:`, responseData);
 
           return {
             id: user.id,
