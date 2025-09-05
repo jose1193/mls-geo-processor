@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { auth } from "@/lib/auth";
 
+interface RouteContext {
+  params: {
+    id: string;
+  };
+}
+
 // DELETE - Eliminar usuario
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
     // Verificar autenticación
     const session = await auth();
@@ -14,7 +17,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userId = params.id;
+    const userId = context.params.id;
 
     // Check if Supabase admin client is available
     if (!supabaseAdmin) {
