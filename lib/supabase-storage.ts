@@ -51,7 +51,7 @@ export interface CompletedFileRecord {
 // STORAGE BUCKET CONFIGURATION
 // ===================================================================
 
-const STORAGE_BUCKET = "mls-completed-files";
+const STORAGE_BUCKET = "mls-processed-files";
 
 // Ensure bucket exists (call this once during app initialization)
 export async function ensureStorageBucketExists(): Promise<void> {
@@ -95,6 +95,19 @@ export async function ensureStorageBucketExists(): Promise<void> {
       }
     } else {
       console.log("✅ Storage bucket already exists");
+
+      // Verify the bucket is public
+      const targetBucket = buckets?.find(
+        (bucket) => bucket.name === STORAGE_BUCKET
+      );
+      if (targetBucket && !targetBucket.public) {
+        console.warn(
+          "⚠️ WARNING: Bucket exists but is private. Downloads may fail."
+        );
+        console.log(
+          "💡 Consider making the bucket public in Supabase dashboard for direct downloads."
+        );
+      }
     }
   } catch (error) {
     console.error("❌ Error ensuring bucket exists:", error);

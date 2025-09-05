@@ -50,7 +50,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     if (fileToDelete.storage_path) {
       try {
         const { error: storageError } = await supabaseAdmin.storage
-          .from("mls-completed-files")
+          .from("mls-processed-files")
           .remove([fileToDelete.storage_path]);
 
         if (storageError) {
