@@ -59,15 +59,19 @@ export default function DashboardPage() {
         // Get real stats from API endpoints
         const response = await fetch("/api/dashboard/stats", {
           headers: {
-            'Cache-Control': 'no-cache',
+            "Cache-Control": "no-cache",
           },
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           setStats(data);
         } else {
-          console.error('Dashboard API error:', response.status, response.statusText);
+          console.error(
+            "Dashboard API error:",
+            response.status,
+            response.statusText
+          );
           // Fallback to simulated stats if API fails
           setStats({
             totalUsers: 5,

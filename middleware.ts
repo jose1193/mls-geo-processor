@@ -22,14 +22,26 @@ export default auth(async function middleware(request: NextRequest) {
 
   // Debugging para Railway - solo en producción para no saturar logs de desarrollo
   if (process.env.NODE_ENV === "production") {
-    console.log(`[MIDDLEWARE] Path: ${pathname}, Session exists: ${!!session}, URL: ${request.url}`);
+    console.log(
+      `[MIDDLEWARE] Path: ${pathname}, Session exists: ${!!session}, URL: ${request.url}`
+    );
+    console.log(`[MIDDLEWARE] ENV - AUTH_URL: ${process.env.AUTH_URL}`);
+    console.log(`[MIDDLEWARE] ENV - NEXTAUTH_URL: ${process.env.NEXTAUTH_URL}`);
   }
 
   // Si usuario está logueado e intenta acceder al login, redirigir al dashboard
   if (session && pathname === "/") {
-    const dashboardUrl = new URL("/dashboard", request.url);
+    // En producción, usar el dominio correcto de Railway
+    const baseUrl = process.env.NODE_ENV === "production" 
+      ? (process.env.AUTH_URL || process.env.NEXTAUTH_URL || request.url)
+      : request.url;
+    
+    const dashboardUrl = new URL("/dashboard", baseUrl);
+    
     if (process.env.NODE_ENV === "production") {
-      console.log(`[MIDDLEWARE] Redirecting authenticated user to dashboard: ${dashboardUrl.href}`);
+      console.log(
+        `[MIDDLEWARE] Redirecting authenticated user to dashboard: ${dashboardUrl.href}`
+      );
     }
     return NextResponse.redirect(dashboardUrl);
   }
@@ -125,7 +137,12 @@ export default auth(async function middleware(request: NextRequest) {
 
   // Redirigir a login si no está autenticado
   if (!session) {
-    const loginUrl = new URL("/", request.url);
+    // En producción, usar el dominio correcto de Railway
+    const baseUrl = process.env.NODE_ENV === "production" 
+      ? (process.env.AUTH_URL || process.env.NEXTAUTH_URL || request.url)
+      : request.url;
+    
+    const loginUrl = new URL("/", baseUrl);
     loginUrl.searchParams.set("callbackUrl", pathname);
 
     const redirectResponse = NextResponse.redirect(loginUrl);

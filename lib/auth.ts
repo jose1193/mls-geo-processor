@@ -45,17 +45,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           }
 
           // Verificar OTP usando API interna
-          const baseUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL || 
-            (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
-          
-          const verifyResponse = await fetch(
-            `${baseUrl}/api/auth/verify-otp`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ email, otp }),
-            }
-          );
+          const baseUrl =
+            process.env.AUTH_URL ||
+            process.env.NEXTAUTH_URL ||
+            (typeof window !== "undefined"
+              ? window.location.origin
+              : "http://localhost:3000");
+
+          const verifyResponse = await fetch(`${baseUrl}/api/auth/verify-otp`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, otp }),
+          });
 
           if (!verifyResponse.ok) {
             return null;
@@ -76,6 +77,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: {
     signIn: "/",
   },
+  trustHost: true, // Importante para Railway
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
