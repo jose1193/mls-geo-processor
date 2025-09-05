@@ -6,6 +6,7 @@ import {
   applyRateLimit,
   generalAPILimiter,
   geocodingAPILimiter,
+  mlsProcessingAPILimiter,
 } from "./lib/rate-limiting";
 import {
   applySecurityHeaders,
@@ -25,26 +26,48 @@ export default auth(async function middleware(request: NextRequest) {
     return NextResponse.redirect(dashboardUrl);
   }
 
-  // Aplicar rate limiting a todas las requests
-  // Usar rate limiter específico para APIs de geocoding
+  // Aplicar rate limiting a requests seleccionadas
+  // Usar rate limiters específicos según el tipo de API
   const isGeocodingAPI = pathname.startsWith("/api/geocoding/");
-  const rateLimiter = isGeocodingAPI ? geocodingAPILimiter : generalAPILimiter;
+  const isMLSProcessingAPI = pathname.startsWith("/api/mls/");
+  const isDashboardAPI = pathname.startsWith("/api/dashboard/");
 
-  const rateLimitResult = await applyRateLimit(rateLimiter, request);
-  if (!rateLimitResult.allowed) {
-    return new NextResponse(
-      JSON.stringify({
-        error: rateLimitResult.error,
-        type: isGeocodingAPI ? "geocoding_rate_limit" : "general_rate_limit",
-      }),
-      {
-        status: 429,
-        headers: {
-          "Content-Type": "application/json",
-          "Retry-After": rateLimitResult.retryAfter?.toString() || "60",
-        },
+  // Aplicar rate limiting apropiado según el tipo de API
+  if (pathname.startsWith("/api/")) {
+    let rateLimiter;
+    let limitType = "general_rate_limit";
+
+    if (isGeocodingAPI) {
+      rateLimiter = geocodingAPILimiter;
+      limitType = "geocoding_rate_limit";
+    } else if (isMLSProcessingAPI) {
+      rateLimiter = mlsProcessingAPILimiter;
+      limitType = "mls_processing_rate_limit";
+    } else if (!isDashboardAPI) {
+      // Solo aplicar rate limiting general a APIs que no sean dashboard
+      rateLimiter = generalAPILimiter;
+      limitType = "general_rate_limit";
+    }
+
+    // Aplicar rate limiting si se determinó un limiter
+    if (rateLimiter) {
+      const rateLimitResult = await applyRateLimit(rateLimiter, request);
+      if (!rateLimitResult.allowed) {
+        return new NextResponse(
+          JSON.stringify({
+            error: rateLimitResult.error,
+            type: limitType,
+          }),
+          {
+            status: 429,
+            headers: {
+              "Content-Type": "application/json",
+              "Retry-After": rateLimitResult.retryAfter?.toString() || "60",
+            },
+          }
+        );
       }
-    );
+    }
   }
 
   // Crear response base

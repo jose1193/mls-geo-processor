@@ -903,6 +903,19 @@ export function useMLSProcessorOptimized(userId?: string | null) {
           JSON.stringify(apiCountersData)
         );
 
+        // Save performance metrics for persistence across STOP/CONTINUE
+        const performanceData = {
+          cacheHitCount: performanceMetrics.current.cacheHitCount,
+          totalRequests: performanceMetrics.current.totalRequests,
+          totalProcessingTime: performanceMetrics.current.totalProcessingTime,
+          errorCount: performanceMetrics.current.errorCount,
+          rateLimitCount: performanceMetrics.current.rateLimitCount,
+        };
+        localStorage.setItem(
+          "optimized-performance-metrics",
+          JSON.stringify(performanceData)
+        );
+
         // Save cache data to localStorage for persistence
         try {
           // Export geocoding cache
@@ -975,6 +988,8 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       localStorage.removeItem(OPTIMIZED_STORAGE_KEY);
       localStorage.removeItem(OPTIMIZED_CACHE_KEY);
       localStorage.removeItem(OPTIMIZED_GEMINI_CACHE_KEY);
+      localStorage.removeItem("optimized-api-counters");
+      localStorage.removeItem("optimized-performance-metrics");
       setRecoveryData(null);
       addLog("🧹 Saved progress and cache cleared", "info");
     } catch (error) {
@@ -2507,6 +2522,28 @@ export function useMLSProcessorOptimized(userId?: string | null) {
         apiCounters.current.geminiCalls = stats.geminiCount;
       }
 
+      // Also restore performance metrics from localStorage if available
+      try {
+        const savedPerformanceMetrics = localStorage.getItem(
+          "optimized-performance-metrics"
+        );
+        if (savedPerformanceMetrics) {
+          const parsedMetrics = JSON.parse(savedPerformanceMetrics);
+          performanceMetrics.current = {
+            cacheHitCount: parsedMetrics.cacheHitCount || 0,
+            totalRequests: parsedMetrics.totalRequests || 0,
+            totalProcessingTime: parsedMetrics.totalProcessingTime || 0,
+            errorCount: parsedMetrics.errorCount || 0,
+            rateLimitCount: parsedMetrics.rateLimitCount || 0,
+          };
+          addLog(
+            `🔄 Restored performance metrics: Cache hits: ${performanceMetrics.current.cacheHitCount}`,
+            "info"
+          );
+        }
+      } catch (error) {
+        console.warn("Failed to restore performance metrics:", error);
+      }
       addLog(
         `🔄 Resuming with API counters: Mapbox: ${apiCounters.current.mapboxCount}, Gemini: ${apiCounters.current.geminiCount}`,
         "info"
@@ -2615,6 +2652,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
     // Clear localStorage
     clearProgress();
     localStorage.removeItem("optimized-api-counters");
+    localStorage.removeItem("optimized-performance-metrics");
 
     // Close modal if open
     setShowStopModal(false);
@@ -2943,6 +2981,36 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       // Fallback: sync calls with count
       apiCounters.current.mapboxCalls = recoveryData.stats.mapboxCount;
       apiCounters.current.geminiCalls = recoveryData.stats.geminiCount;
+    }
+
+    // Also restore performance metrics from localStorage if available
+    try {
+      const savedPerformanceMetrics = localStorage.getItem(
+        "optimized-performance-metrics"
+      );
+      if (savedPerformanceMetrics) {
+        const parsedMetrics = JSON.parse(savedPerformanceMetrics);
+        performanceMetrics.current = {
+          cacheHitCount: parsedMetrics.cacheHitCount || 0,
+          totalRequests: parsedMetrics.totalRequests || 0,
+          totalProcessingTime: parsedMetrics.totalProcessingTime || 0,
+          errorCount: parsedMetrics.errorCount || 0,
+          rateLimitCount: parsedMetrics.rateLimitCount || 0,
+        };
+        addLog(
+          `🔄 Restored performance metrics: Cache hits: ${performanceMetrics.current.cacheHitCount}`,
+          "info"
+        );
+      }
+    } catch (error) {
+      console.warn("Failed to restore performance metrics:", error);
+      performanceMetrics.current = {
+        cacheHitCount: 0,
+        totalRequests: 0,
+        totalProcessingTime: 0,
+        errorCount: 0,
+        rateLimitCount: 0,
+      };
     }
 
     setFileData({
