@@ -2,14 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { auth } from "@/lib/auth";
 
-interface RouteParams {
-  params: {
-    id: string;
-  };
-}
-
 // DELETE - Eliminar usuario
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
     // Verificar autenticación
     const session = await auth();
