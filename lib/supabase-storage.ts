@@ -130,13 +130,22 @@ export function convertToExcelBuffer(results: ProcessedResult[]): ArrayBuffer {
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.aoa_to_sheet([
       [
-        "Original Address",
-        "Status",
-        "Formatted Address",
+        "Address",
+        "Zip Code",
+        "City",
+        "County",
+        "House Number",
         "Latitude",
         "Longitude",
         "Neighborhood",
+        "Neighborhood Source",
         "Community",
+        "Community Source",
+        "Status",
+        "API Source",
+        "Processing Time (ms)",
+        "Cached Result",
+        "Error",
       ],
     ]);
     XLSX.utils.book_append_sheet(workbook, worksheet, "MLS Processed Data");
@@ -148,68 +157,41 @@ export function convertToExcelBuffer(results: ProcessedResult[]): ArrayBuffer {
     return buffer;
   }
 
-  // Prepare data for Excel with clean column names
+  // Helper function to safely convert values to string
+  const safeString = (value: unknown): string => {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    return String(value);
+  };
+
+  // Create clean data with ONLY the columns we want (no duplicates)
   const excelData = results.map((result) => ({
-    // Clean up and format all fields for Excel
-    "ML Number": result["ML#"] || result.mlNumber || "",
-    "Original Address": result.original_address || "",
-    Status: result.status || "",
-    "Processed At": result.processed_at
-      ? new Date(result.processed_at).toLocaleString()
-      : "",
-
-    // Geocoding results
-    "Formatted Address": result.formatted_address || "",
-    Latitude: result.latitude || "",
-    Longitude: result.longitude || "",
-
-    // Geographic information
-    "House Number": result["House Number"] || "",
-    City: result.City || result.city || "",
-    County: result.County || result.county || "",
-    "Zip Code": result["Zip Code"] || result.zip || "",
-    State: result.State || result.state || "FL",
-
-    // Neighborhood information
-    Neighborhood: result.neighbourhood || result.neighborhoods || "",
-    Community: result.comunidades || result.Community || "",
-    "Neighborhood Source": result.neighborhood_source || "",
-    "Community Source":
-      result.community_source || result["Community Source"] || "",
-
-    // Processing metadata
-    "API Source": result.api_source || "",
-    "Processing Time (ms)": result.processing_time_ms || 0,
-    "Cached Result": result.cached_result ? "Yes" : "No",
-    Error: result.error || "",
-
-    // Include any other original fields that might be useful
-    ...Object.fromEntries(
-      Object.entries(result).filter(
-        ([key]) =>
-          ![
-            "original_address",
-            "status",
-            "processed_at",
-            "formatted_address",
-            "latitude",
-            "longitude",
-            "neighbourhood",
-            "neighborhoods",
-            "comunidades",
-            "Community",
-            "neighborhood_source",
-            "community_source",
-            "api_source",
-            "processing_time_ms",
-            "cached_result",
-            "error",
-          ].includes(key)
-      )
+    // Reorganized columns in the exact order requested
+    Address: safeString(result.original_address),
+    "Zip Code": safeString(result["Zip Code"] || result.zip),
+    City: safeString(result.City || result.city),
+    County: safeString(result.County || result.county),
+    "House Number": safeString(result["House Number"]),
+    Latitude: safeString(result.latitude),
+    Longitude: safeString(result.longitude),
+    Neighborhood: safeString(result.neighbourhood || result.neighborhoods),
+    "Neighborhood Source": safeString(result.neighborhood_source),
+    Community: safeString(result.comunidades || result.Community),
+    "Community Source": safeString(
+      result.community_source || result["Community Source"]
     ),
+    Status: safeString(result.status),
+    "API Source": safeString(result.api_source),
+    "Processing Time (ms)":
+      typeof result.processing_time_ms === "number"
+        ? result.processing_time_ms
+        : 0,
+    "Cached Result": result.cached_result ? "Yes" : "No",
+    Error: safeString(result.error),
   }));
 
   console.log("📊 Transformed", excelData.length, "rows for Excel");
+  console.log("📊 Column headers:", Object.keys(excelData[0] || {}));
 
   // Create workbook and worksheet
   const workbook = XLSX.utils.book_new();
