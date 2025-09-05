@@ -20,9 +20,17 @@ export default auth(async function middleware(request: NextRequest) {
   // En NextAuth v5, la sesión ya está disponible en request.auth
   const session = (request as NextRequest & { auth?: Session | null }).auth;
 
+  // Debugging para Railway - solo en producción para no saturar logs de desarrollo
+  if (process.env.NODE_ENV === "production") {
+    console.log(`[MIDDLEWARE] Path: ${pathname}, Session exists: ${!!session}, URL: ${request.url}`);
+  }
+
   // Si usuario está logueado e intenta acceder al login, redirigir al dashboard
   if (session && pathname === "/") {
     const dashboardUrl = new URL("/dashboard", request.url);
+    if (process.env.NODE_ENV === "production") {
+      console.log(`[MIDDLEWARE] Redirecting authenticated user to dashboard: ${dashboardUrl.href}`);
+    }
     return NextResponse.redirect(dashboardUrl);
   }
 

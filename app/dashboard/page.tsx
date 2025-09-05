@@ -57,11 +57,17 @@ export default function DashboardPage() {
     const loadStats = async () => {
       try {
         // Get real stats from API endpoints
-        const response = await fetch("/api/dashboard/stats");
+        const response = await fetch("/api/dashboard/stats", {
+          headers: {
+            'Cache-Control': 'no-cache',
+          },
+        });
+        
         if (response.ok) {
           const data = await response.json();
           setStats(data);
         } else {
+          console.error('Dashboard API error:', response.status, response.statusText);
           // Fallback to simulated stats if API fails
           setStats({
             totalUsers: 5,
@@ -71,7 +77,7 @@ export default function DashboardPage() {
           });
         }
       } catch (error) {
-        console.error("Error loading stats:", error);
+        console.error("Error loading dashboard stats:", error);
         // Fallback to simulated stats
         setStats({
           totalUsers: 5,

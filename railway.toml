@@ -1,0 +1,11 @@
+# Railway configuration for Next.js deployment
+
+# Build configuration
+build:
+  builder: NIXPACKS
+
+# Runtime configuration  
+deploy:
+  numReplicas: 1
+  restartPolicyType: ON_FAILURE
+  restartPolicyMaxRetries: 10
