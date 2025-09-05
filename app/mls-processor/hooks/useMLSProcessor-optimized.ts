@@ -1079,9 +1079,10 @@ export function useMLSProcessorOptimized(userId?: string | null) {
 
         // Update both ref counter and state
         apiCounters.current.mapboxCount++;
+        apiCounters.current.mapboxCalls++;
         setStats((prev) => ({
           ...prev,
-          mapboxCount: apiCounters.current.mapboxCount,
+          mapboxCount: prev.mapboxCount + 1,
         }));
 
         return optimizedResult;
@@ -1368,9 +1369,10 @@ export function useMLSProcessorOptimized(userId?: string | null) {
 
         // Update both ref counter and state
         apiCounters.current.geminiCount++;
+        apiCounters.current.geminiCalls++;
         setStats((prev) => ({
           ...prev,
-          geminiCount: apiCounters.current.geminiCount,
+          geminiCount: prev.geminiCount + 1,
         }));
 
         return optimizedResult;
@@ -2403,10 +2405,13 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       return;
     }
 
-    // 🔥 IMPORTANT: Only clear previous results when NOT continuing from recovery
-    // This prevents losing recovery data but cleans up for fresh starts
-    if (!isContinuingFromRecovery) {
-      console.log("🧹 Fresh start - clearing all previous data");
+    // 🔥 IMPORTANT: Only clear previous results when it's a completely fresh start
+    // This prevents losing recovery data but cleans up for truly new processing sessions
+    const isCompletelyFreshStart =
+      !isContinuingFromRecovery && results.length === 0;
+
+    if (isCompletelyFreshStart) {
+      console.log("🧹 Completely fresh start - clearing all previous data");
       setResults([]);
       resultsRef.current = [];
       setStats({
@@ -2433,7 +2438,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
         rateLimitCount: 0,
       };
 
-      // 🔥 IMPORTANT: Reset API counters ref on fresh start
+      // 🔥 IMPORTANT: Reset API counters ref on completely fresh start
       apiCounters.current = {
         mapboxCount: 0,
         geocodioCount: 0,
@@ -2442,7 +2447,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
         geminiCalls: 0,
       };
 
-      // Clear all caches ONLY on fresh start
+      // Clear all caches ONLY on completely fresh start
       geocodingCache.current.clear();
       geminiCache.current.clear();
 
@@ -2450,12 +2455,16 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       try {
         localStorage.removeItem(OPTIMIZED_CACHE_KEY);
         localStorage.removeItem(OPTIMIZED_GEMINI_CACHE_KEY);
+        localStorage.removeItem("optimized-api-counters");
       } catch (error) {
         console.warn("Failed to clear localStorage cache:", error);
       }
 
-      addLog("🧹 Cleared all caches before starting fresh processing", "info");
-    } else {
+      addLog(
+        "🧹 Cleared all caches before starting completely fresh processing",
+        "info"
+      );
+    } else if (isContinuingFromRecovery) {
       console.log(
         "🔄 Continuing from recovery - preserving existing data and cache"
       );
@@ -2467,6 +2476,39 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       const geminiCacheSize = geminiCache.current.size();
       addLog(
         `💾 Preserving cache: ${geocodingCacheSize} geocoding + ${geminiCacheSize} gemini entries`,
+        "info"
+      );
+    } else {
+      console.log(
+        `🔄 Resuming processing from ${results.length} existing results - preserving API counters`
+      );
+
+      // Sync apiCounters ref with current stats to ensure consistency
+      apiCounters.current.mapboxCount = stats.mapboxCount;
+      apiCounters.current.geocodioCount = stats.geocodioCount;
+      apiCounters.current.geminiCount = stats.geminiCount;
+
+      // Also sync from localStorage if available
+      try {
+        const savedApiCounters = localStorage.getItem("optimized-api-counters");
+        if (savedApiCounters) {
+          const parsedCounters = JSON.parse(savedApiCounters);
+          apiCounters.current.mapboxCalls =
+            parsedCounters.mapboxCalls || stats.mapboxCount;
+          apiCounters.current.geminiCalls =
+            parsedCounters.geminiCalls || stats.geminiCount;
+        } else {
+          apiCounters.current.mapboxCalls = stats.mapboxCount;
+          apiCounters.current.geminiCalls = stats.geminiCount;
+        }
+      } catch (error) {
+        console.warn("Failed to restore API counters:", error);
+        apiCounters.current.mapboxCalls = stats.mapboxCount;
+        apiCounters.current.geminiCalls = stats.geminiCount;
+      }
+
+      addLog(
+        `🔄 Resuming with API counters: Mapbox: ${apiCounters.current.mapboxCount}, Gemini: ${apiCounters.current.geminiCount}`,
         "info"
       );
     }
@@ -2482,6 +2524,8 @@ export function useMLSProcessorOptimized(userId?: string | null) {
     processAddressesBatch,
     addLog,
     isContinuingFromRecovery,
+    results,
+    stats,
   ]);
 
   const stopProcessing = useCallback(() => {
@@ -2872,20 +2916,33 @@ export function useMLSProcessorOptimized(userId?: string | null) {
     apiCounters.current.geocodioCount = recoveryData.stats.geocodioCount;
     apiCounters.current.geminiCount = recoveryData.stats.geminiCount;
 
-    // Also restore API counters from localStorage if available
+    // Also restore API counters from localStorage if available, but fallback to stats if not found
     try {
       const savedApiCounters = localStorage.getItem("optimized-api-counters");
       if (savedApiCounters) {
         const parsedCounters = JSON.parse(savedApiCounters);
-        apiCounters.current.mapboxCalls = parsedCounters.mapboxCalls || 0;
-        apiCounters.current.geminiCalls = parsedCounters.geminiCalls || 0;
+        apiCounters.current.mapboxCalls =
+          parsedCounters.mapboxCalls || recoveryData.stats.mapboxCount;
+        apiCounters.current.geminiCalls =
+          parsedCounters.geminiCalls || recoveryData.stats.geminiCount;
         addLog(
           `🔄 Restored API counters: Mapbox: ${apiCounters.current.mapboxCalls}, Gemini: ${apiCounters.current.geminiCalls}`,
+          "info"
+        );
+      } else {
+        // If no localStorage data, sync calls with count
+        apiCounters.current.mapboxCalls = recoveryData.stats.mapboxCount;
+        apiCounters.current.geminiCalls = recoveryData.stats.geminiCount;
+        addLog(
+          `🔄 Synced API counters from stats: Mapbox: ${apiCounters.current.mapboxCalls}, Gemini: ${apiCounters.current.geminiCalls}`,
           "info"
         );
       }
     } catch (error) {
       console.warn("Failed to restore API counters:", error);
+      // Fallback: sync calls with count
+      apiCounters.current.mapboxCalls = recoveryData.stats.mapboxCount;
+      apiCounters.current.geminiCalls = recoveryData.stats.geminiCount;
     }
 
     setFileData({
