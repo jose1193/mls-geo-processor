@@ -45,14 +45,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           }
 
           // Verificar OTP usando API interna
-          const baseUrl = 
+          const baseUrl =
             process.env.AUTH_URL ||
             process.env.NEXTAUTH_URL ||
-            (process.env.NODE_ENV === "production" 
-              ? "https://mls-geo-processor-production.up.railway.app"
-              : (typeof window !== "undefined"
-                ? window.location.origin
-                : "http://localhost:3000"));
+            (typeof window !== "undefined"
+              ? window.location.origin
+              : "http://localhost:3000");
 
           console.log(`[AUTH] Base URL for OTP verification: ${baseUrl}`);
           console.log(`[AUTH] ENV - AUTH_URL: ${process.env.AUTH_URL}`);
@@ -61,9 +59,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
           const verifyResponse = await fetch(`${baseUrl}/api/auth/verify-otp`, {
             method: "POST",
-            headers: { 
+            headers: {
               "Content-Type": "application/json",
-              "User-Agent": "NextAuth-Internal"
+              "User-Agent": "NextAuth-Internal",
             },
             body: JSON.stringify({ email, otp }),
           });
@@ -72,14 +70,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             `[AUTH] Verify response status: ${verifyResponse.status}`
           );
           console.log(
-            `[AUTH] Verify response headers:`, 
+            `[AUTH] Verify response headers:`,
             Object.fromEntries(verifyResponse.headers.entries())
           );
 
           if (!verifyResponse.ok) {
             const errorText = await verifyResponse.text();
             console.log(`[AUTH] Verify response error: ${errorText}`);
-            console.log(`[AUTH] Response was not JSON, likely HTML or error page`);
+            console.log(
+              `[AUTH] Response was not JSON, likely HTML or error page`
+            );
             return null;
           }
 

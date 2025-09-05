@@ -121,20 +121,24 @@ export function validateRequestOrigin(
   }
 
   const requestOrigin = origin || (referer ? new URL(referer).origin : "");
-  
+
   // URLs permitidas en producción
-  const siteUrl = process.env.NEXTAUTH_URL || process.env.AUTH_URL || "http://localhost:3000";
+  const siteUrl =
+    process.env.NEXTAUTH_URL || process.env.AUTH_URL || "http://localhost:3000";
   const allowedDomains = [
     siteUrl,
-    "https://mls-geo-processor-production.up.railway.app",
+    process.env.NEXTAUTH_URL,
+    process.env.AUTH_URL,
     "http://localhost:3000",
-    "https://localhost:3000"
-  ];
+    "https://localhost:3000",
+  ].filter(Boolean); // Filtra valores undefined/null
 
   const defaultAllowed = [...allowedDomains, ...allowedOrigins];
 
-  console.log(`[ORIGIN-VALIDATION] Request origin: ${requestOrigin}, Allowed: ${defaultAllowed.join(', ')}`);
-  
+  console.log(
+    `[ORIGIN-VALIDATION] Request origin: ${requestOrigin}, Allowed: ${defaultAllowed.join(", ")}`
+  );
+
   return defaultAllowed.includes(requestOrigin);
 }
 
