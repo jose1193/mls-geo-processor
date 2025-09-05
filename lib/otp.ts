@@ -26,6 +26,12 @@ export function verifyOTP(code: string, hashedCode: string): boolean {
 
 export async function storeOTP(email: string, code: string): Promise<boolean> {
   try {
+    // Check if Supabase admin client is available
+    if (!supabaseAdmin) {
+      console.error("Supabase admin client not available");
+      return false;
+    }
+
     const hashedCode = hashOTP(code);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
 
@@ -62,6 +68,12 @@ export async function validateOTP(
   error?: string;
 }> {
   try {
+    // Check if Supabase admin client is available
+    if (!supabaseAdmin) {
+      console.error("Supabase admin client not available");
+      return { valid: false, error: "Database connection not available" };
+    }
+
     // Buscar código activo para el email
     const { data: otpData, error: fetchError } = await supabaseAdmin
       .from("otp_codes")
@@ -131,6 +143,14 @@ export async function validateOTP(
 
 export async function cleanExpiredOTPs(): Promise<void> {
   try {
+    // Check if Supabase admin client is available
+    if (!supabaseAdmin) {
+      console.warn(
+        "Supabase admin client not available for cleaning expired OTPs"
+      );
+      return;
+    }
+
     const { error } = await supabaseAdmin
       .from("otp_codes")
       .delete()
