@@ -1705,12 +1705,26 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       );
       const startingIndex = options?.continueFromIndex || 0;
       let processedCount = startingIndex; // Start from where we left off
-      let successCount = 0;
 
       // Initialize with existing results if continuing
       const allProcessedResults: ProcessedResult[] = [
         ...(options?.existingResults || []),
       ];
+
+      // Calculate existing success count from previous results
+      let successCount = options?.existingResults
+        ? options.existingResults.filter(
+            (result) => result.status === "success"
+          ).length
+        : 0;
+
+      // Log initial success count for debugging
+      if (options?.continueFromIndex) {
+        addLog(
+          `📊 Continuing with ${successCount} previous successes out of ${options.existingResults?.length || 0} existing results`,
+          "info"
+        );
+      }
 
       addLog(
         `🚀 ${options?.continueFromIndex ? "Continuing" : "Starting"} OPTIMIZED processing: ${addressDataList.length} ${options?.continueFromIndex ? "remaining" : ""} records in ${totalBatches} batches`,
@@ -2588,13 +2602,9 @@ export function useMLSProcessorOptimized(userId?: string | null) {
     const currentResultsLength = resultsRef.current.length;
     console.log("🛑 Current results from ref:", currentResultsLength);
 
-    // Show stop modal if there are results to save
-    if (currentResultsLength > 0) {
-      console.log("📊 Showing stop modal with results:", currentResultsLength);
-      setShowStopModal(true);
-    } else {
-      console.log("❌ No results to show modal for");
-    }
+    // Always show stop modal when user clicks stop
+    console.log("📊 Showing stop modal (user requested stop)");
+    setShowStopModal(true);
 
     addLog("⏹️ Processing stopped by user", "warning");
   }, [addLog]);
@@ -3093,42 +3103,37 @@ export function useMLSProcessorOptimized(userId?: string | null) {
 
   // Modal control functions
   const closeStopModal = useCallback(() => {
-    // Only save progress if processing was stopped mid-way (not completed)
-    if (results.length > 0 && fileData) {
-      const progressPercentage = (results.length / fileData.data.length) * 100;
+    console.log("▶️ Continue Processing clicked");
 
-      // Only save progress if not completed (less than 100%)
-      if (progressPercentage < 100) {
-        saveProgress(
-          results,
-          results.length,
-          fileData.data.length,
-          fileData.fileName,
-          stats,
-          detectedColumns,
-          fileData.data
-        );
-        addLog("💾 Progress saved automatically", "info");
-      } else {
-        // If 100% completed but user clicked STOP, clear progress instead
-        clearProgress();
-        localStorage.removeItem("optimized-api-counters");
-        addLog(
-          "🧹 Cleared progress - processing was already completed",
-          "info"
-        );
-      }
-    }
+    // Simply close the modal and continue processing
     setShowStopModal(false);
-  }, [
-    results,
-    fileData,
-    stats,
-    detectedColumns,
-    saveProgress,
-    addLog,
-    clearProgress,
-  ]);
+
+    // Continue processing if there's data loaded
+    if (fileData && fileData.data.length > 0) {
+      addLog("▶️ Continuing processing...", "info");
+
+      // Reset the stop flag to allow processing to continue
+      shouldStopProcessing.current = false;
+
+      // Calculate how many records are left to process
+      const alreadyProcessed = results.length;
+      const totalRecords = fileData.data.length;
+      const remainingRecords = fileData.data.slice(alreadyProcessed);
+
+      console.log(
+        `🔄 Continuing from record ${alreadyProcessed + 1}/${totalRecords} (${remainingRecords.length} remaining)`
+      );
+
+      // Continue processing from where we left off
+      setTimeout(() => {
+        processAddressesBatch(remainingRecords, detectedColumns, {
+          continueFromIndex: alreadyProcessed,
+          totalOriginalRecords: totalRecords,
+          existingResults: results,
+        });
+      }, 100);
+    }
+  }, [fileData, addLog, results, detectedColumns, processAddressesBatch]);
 
   const closeRecoveryModal = useCallback(() => {
     setShowRecoveryModal(false);

@@ -205,9 +205,9 @@ export default function OptimizedModals({
                 <Button
                   onClick={onCloseStopModal}
                   variant="outline"
-                  className="bg-gray-700/50 border-gray-600 text-gray-300 hover:bg-gray-600/50 hover:text-white transition-all duration-300 flex items-center justify-center"
+                  className="bg-green-600/20 border-green-500 text-green-300 hover:bg-green-600/40 hover:text-green-200 transition-all duration-300 flex items-center justify-center"
                 >
-                  💾 Save Progress & Continue Later
+                  ▶️ Continue Processing
                 </Button>
               </div>
             </CardContent>
