@@ -81,9 +81,11 @@ export async function logSecurityEvent(
 ): Promise<void> {
   try {
     const { supabaseAdmin } = await import("@/lib/supabase");
-    
+
     if (!supabaseAdmin) {
-      console.warn("Cannot log security event: Supabase admin client not available");
+      console.warn(
+        "Cannot log security event: Supabase admin client not available"
+      );
       return;
     }
 
