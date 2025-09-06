@@ -102,9 +102,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Log del evento de seguridad
-    await logSecurityEvent(session.user.email, "user_created", request, {
+    // Obtener el ID del admin que está realizando la acción
+    const { data: adminUser } = await supabaseAdmin
+      .from("users")
+      .select("id")
+      .eq("email", session.user.email)
+      .single();
+
+    await logSecurityEvent(adminUser?.id || null, "user_created", request, {
+      admin_email: session.user.email,
       created_user_email: email,
       created_user_name: name,
+      created_user_id: newUser.id,
     });
 
     return NextResponse.json({
@@ -131,7 +140,7 @@ export async function POST(request: NextRequest) {
 
 // Helper para logging de eventos de seguridad
 async function logSecurityEvent(
-  adminEmail: string,
+  userId: string | null,
   eventType: string,
   request: NextRequest,
   details: Record<string, unknown> = {}
@@ -150,14 +159,11 @@ async function logSecurityEvent(
     const userAgent = request.headers.get("user-agent") || "";
 
     await supabaseAdmin.from("security_logs").insert({
-      user_id: null, // Could be improved to get actual user ID
+      user_id: userId,
       event_type: eventType,
       ip_address: ip,
       user_agent: userAgent,
-      details: {
-        admin_email: adminEmail,
-        ...details,
-      },
+      details: details,
     });
   } catch (error) {
     console.error("Error logging security event:", error);

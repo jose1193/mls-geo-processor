@@ -78,7 +78,15 @@ export async function DELETE(
     }
 
     // Log del evento de seguridad
-    await logSecurityEvent(session.user.email, "file_deleted", request, {
+    // Obtener el ID del usuario que está realizando la acción
+    const { data: user } = await supabaseAdmin
+      .from("users")
+      .select("id")
+      .eq("email", session.user.email)
+      .single();
+
+    await logSecurityEvent(user?.id || null, "file_deleted", request, {
+      user_email: session.user.email,
       deleted_file_name: fileToDelete.original_filename,
       deleted_file_id: fileId,
       storage_path: fileToDelete.storage_path,
@@ -99,7 +107,7 @@ export async function DELETE(
 
 // Helper para logging de eventos de seguridad
 async function logSecurityEvent(
-  userEmail: string,
+  userId: string | null,
   eventType: string,
   request: NextRequest,
   details: Record<string, unknown> = {}
@@ -113,14 +121,11 @@ async function logSecurityEvent(
 
     if (supabaseAdmin) {
       await supabaseAdmin.from("security_logs").insert({
-        user_id: null,
+        user_id: userId,
         event_type: eventType,
         ip_address: ip,
         user_agent: userAgent,
-        details: {
-          user_email: userEmail,
-          ...details,
-        },
+        details: details,
       });
     }
   } catch (error) {

@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { NextRequest } from "next/server";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -66,5 +67,54 @@ export async function logUserActivity(
     }
   } catch (error) {
     console.error("Error logging user activity:", error);
+  }
+}
+
+/**
+ * Log security events with admin privileges - for use in API routes
+ */
+export async function logSecurityEvent(
+  userIdOrEmail: string | null,
+  eventType: string,
+  request: NextRequest,
+  details: Record<string, unknown> = {}
+): Promise<void> {
+  try {
+    const { supabaseAdmin } = await import("@/lib/supabase");
+    
+    if (!supabaseAdmin) {
+      console.warn("Cannot log security event: Supabase admin client not available");
+      return;
+    }
+
+    let userId: string | null = null;
+
+    // Si se proporciona un email, obtener el ID del usuario
+    if (userIdOrEmail && userIdOrEmail.includes("@")) {
+      const { data: user } = await supabaseAdmin
+        .from("users")
+        .select("id")
+        .eq("email", userIdOrEmail)
+        .single();
+      userId = user?.id || null;
+    } else {
+      userId = userIdOrEmail;
+    }
+
+    const ip =
+      request.headers.get("x-forwarded-for")?.split(",")[0] ||
+      request.headers.get("x-real-ip") ||
+      "unknown";
+    const userAgent = request.headers.get("user-agent") || "";
+
+    await supabaseAdmin.from("security_logs").insert({
+      user_id: userId,
+      event_type: eventType,
+      ip_address: ip,
+      user_agent: userAgent,
+      details: details,
+    });
+  } catch (error) {
+    console.error("Error logging security event:", error);
   }
 }

@@ -9,6 +9,7 @@ import {
   otpEmailLimiter,
 } from "@/lib/rate-limiting";
 import { supabaseAdmin } from "@/lib/supabase";
+import { logSecurityEvent } from "@/lib/activity-tracker";
 
 const sendOTPSchema = z.object({
   email: z.string().email("Invalid email"),
@@ -103,7 +104,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Log successful event
-    await logSecurityEvent(null, "otp_sent", request, {
+    await logSecurityEvent(email, "otp_sent", request, {
       email: email,
     });
 
@@ -132,39 +133,5 @@ export async function POST(request: NextRequest) {
       { error: "Internal server error" },
       { status: 500 }
     );
-  }
-}
-
-// Helper for security event logging
-async function logSecurityEvent(
-  userId: string | null,
-  eventType: string,
-  request: NextRequest,
-  details: Record<string, unknown> = {}
-) {
-  try {
-    // Check if Supabase admin client is available
-    if (!supabaseAdmin) {
-      console.warn(
-        "Cannot log security event: Supabase admin client not available"
-      );
-      return;
-    }
-
-    const ip =
-      request.headers.get("x-forwarded-for")?.split(",")[0] ||
-      request.headers.get("x-real-ip") ||
-      "unknown";
-    const userAgent = request.headers.get("user-agent") || "";
-
-    await supabaseAdmin.from("security_logs").insert({
-      user_id: userId,
-      event_type: eventType,
-      ip_address: ip,
-      user_agent: userAgent,
-      details: details,
-    });
-  } catch (error) {
-    console.error("Error logging security event:", error);
   }
 }

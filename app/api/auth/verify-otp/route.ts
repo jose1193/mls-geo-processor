@@ -3,8 +3,9 @@ import { z } from "zod";
 import { validateOTP } from "@/lib/otp";
 import { applyEmailRateLimit, otpVerifyLimiter } from "@/lib/rate-limiting";
 import { supabaseAdmin } from "@/lib/supabase";
+import { logSecurityEvent } from "@/lib/activity-tracker";
 
-const verifyOTPSchema = z.object({
+const verifySchema = z.object({
   email: z.string().email("Invalid email"),
   otp: z.string().length(6, "Code must be 6 digits"),
 });
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest) {
   try {
     // Rate limiting por email para verificación
     const body = await request.json();
-    const { email, otp } = verifyOTPSchema.parse(body);
+    const { email, otp } = verifySchema.parse(body);
 
     console.log(
       `[VERIFY-OTP] Request from: ${request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown"}`
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
 
     if (!validation.valid) {
       // Log intento fallido
-      await logSecurityEvent(null, "otp_verify_failed", request, {
+      await logSecurityEvent(email, "otp_verify_failed", request, {
         email: email,
         error: validation.error,
         attempted_otp: otp.substring(0, 2) + "****",
@@ -96,7 +97,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Log verificación exitosa
-    await logSecurityEvent(null, "otp_verify_success", request, {
+    await logSecurityEvent(email, "otp_verify_success", request, {
       email: email,
     });
 
@@ -123,39 +124,5 @@ export async function POST(request: NextRequest) {
       { error: "Internal server error" },
       { status: 500 }
     );
-  }
-}
-
-// Helper para logging de eventos de seguridad
-async function logSecurityEvent(
-  userId: string | null,
-  eventType: string,
-  request: NextRequest,
-  details: Record<string, unknown> = {}
-) {
-  try {
-    // Check if Supabase admin client is available
-    if (!supabaseAdmin) {
-      console.warn(
-        "Cannot log security event: Supabase admin client not available"
-      );
-      return;
-    }
-
-    const ip =
-      request.headers.get("x-forwarded-for")?.split(",")[0] ||
-      request.headers.get("x-real-ip") ||
-      "unknown";
-    const userAgent = request.headers.get("user-agent") || "";
-
-    await supabaseAdmin.from("security_logs").insert({
-      user_id: userId,
-      event_type: eventType,
-      ip_address: ip,
-      user_agent: userAgent,
-      details: details,
-    });
-  } catch (error) {
-    console.error("Error logging security event:", error);
   }
 }
