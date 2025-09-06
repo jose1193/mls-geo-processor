@@ -13,7 +13,9 @@ export async function POST(request: NextRequest) {
 
     const { address, city, county } = await request.json();
 
-    console.log(`[GEMINI-OPTIMIZED] Processing: ${address}, ${city}, ${county}`);
+    console.log(
+      `[GEMINI-OPTIMIZED] Processing: ${address}, ${city}, ${county}`
+    );
 
     // Debug: Log problematic addresses specifically
     const fullAddr = `${address}, ${city}, ${county}`;
@@ -102,14 +104,14 @@ Ejemplo cuando no hay datos:
 }`;
 
     console.log(`[GEMINI-OPTIMIZED] Making API call to Gemini`);
-    
+
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "User-Agent": "MLS-Geo-Processor/1.0"
+          "User-Agent": "MLS-Geo-Processor/1.0",
         },
         body: JSON.stringify({
           contents: [
@@ -140,7 +142,9 @@ Ejemplo cuando no hay datos:
         .text()
         .catch(() => "Unable to read error body");
 
-      console.warn(`[GEMINI-OPTIMIZED] Error ${status} for address: ${fullAddr}`);
+      console.warn(
+        `[GEMINI-OPTIMIZED] Error ${status} for address: ${fullAddr}`
+      );
 
       let errorMessage = `Gemini API error: ${status}`;
       if (status === 401) {
@@ -148,17 +152,22 @@ Ejemplo cuando no hay datos:
       } else if (status === 403) {
         errorMessage = "Gemini API access denied";
       } else if (status === 429) {
-        const retryAfter = response.headers.get('Retry-After');
-        console.warn(`[GEMINI-OPTIMIZED] Rate limited. Retry after: ${retryAfter} seconds`);
+        const retryAfter = response.headers.get("Retry-After");
+        console.warn(
+          `[GEMINI-OPTIMIZED] Rate limited. Retry after: ${retryAfter} seconds`
+        );
         errorMessage = "Rate limit exceeded";
-        
-        return NextResponse.json({
-          success: false,
-          error: errorMessage,
-          status: 429,
-          retryAfter: retryAfter ? parseInt(retryAfter) : 60,
-          processing_time_ms: Math.round(processingTime)
-        }, { status: 429 });
+
+        return NextResponse.json(
+          {
+            success: false,
+            error: errorMessage,
+            status: 429,
+            retryAfter: retryAfter ? parseInt(retryAfter) : 60,
+            processing_time_ms: Math.round(processingTime),
+          },
+          { status: 429 }
+        );
       }
 
       return NextResponse.json({
@@ -438,12 +447,12 @@ Ejemplo cuando no hay datos:
 
     if (error instanceof Error) {
       errorMessage = error.message;
-      
+
       // Check for specific error types
-      if (error.message.includes('fetch')) {
+      if (error.message.includes("fetch")) {
         errorMessage = "Network error or timeout";
         statusCode = 503;
-      } else if (error.message.includes('JSON')) {
+      } else if (error.message.includes("JSON")) {
         errorMessage = "Invalid JSON in request";
         statusCode = 400;
       }
@@ -454,7 +463,7 @@ Ejemplo cuando no hay datos:
         success: false,
         error: errorMessage,
         processing_time_ms: Math.round(processingTime),
-        debug_info: `Error occurred during Gemini API call: ${errorMessage}`
+        debug_info: `Error occurred during Gemini API call: ${errorMessage}`,
       },
       { status: statusCode }
     );

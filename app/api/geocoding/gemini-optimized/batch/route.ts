@@ -38,18 +38,20 @@ export async function POST(request: NextRequest) {
 
     if (!addresses || !Array.isArray(addresses) || addresses.length === 0) {
       return NextResponse.json(
-        { error: "Addresses array required" }, 
+        { error: "Addresses array required" },
         { status: 400 }
       );
     }
 
-    console.log(`[BATCH-GEMINI] Starting batch processing of ${addresses.length} addresses`);
+    console.log(
+      `[BATCH-GEMINI] Starting batch processing of ${addresses.length} addresses`
+    );
 
     // Configurar el batch processor con opciones específicas para Gemini
     const geminiConfig = {
       batchSize: options.batchSize || 20, // Menor batch size para Gemini
       concurrency: options.concurrency || 5, // Menor concurrencia para Gemini
-      delayBetweenBatches: options.delayBetweenBatches || 200 // Más delay para Gemini
+      delayBetweenBatches: options.delayBetweenBatches || 200, // Más delay para Gemini
     };
 
     batchProcessor.updateConfig(geminiConfig);
@@ -57,17 +59,22 @@ export async function POST(request: NextRequest) {
     const startTime = Date.now();
 
     // Procesador individual para cada dirección
-    const geminiProcessor = async (addressData: typeof addresses[0]): Promise<GeminiResult> => {
+    const geminiProcessor = async (
+      addressData: (typeof addresses)[0]
+    ): Promise<GeminiResult> => {
       try {
-        const response = await fetch(`${getBaseUrl(request)}/api/geocoding/gemini-optimized`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': request.headers.get('Authorization') || '',
-            'Cookie': request.headers.get('Cookie') || ''
-          },
-          body: JSON.stringify(addressData)
-        });
+        const response = await fetch(
+          `${getBaseUrl(request)}/api/geocoding/gemini-optimized`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: request.headers.get("Authorization") || "",
+              Cookie: request.headers.get("Cookie") || "",
+            },
+            body: JSON.stringify(addressData),
+          }
+        );
 
         if (!response.ok) {
           if (response.status === 429) {
@@ -78,7 +85,7 @@ export async function POST(request: NextRequest) {
         }
 
         const data = await response.json();
-        
+
         if (data.success) {
           return {
             address: addressData.address,
@@ -87,7 +94,7 @@ export async function POST(request: NextRequest) {
             success: true,
             neighborhood: data.data?.neighborhood || null,
             community: data.data?.community || null,
-            processing_time_ms: data.processing_time_ms
+            processing_time_ms: data.processing_time_ms,
           };
         } else {
           return {
@@ -95,7 +102,7 @@ export async function POST(request: NextRequest) {
             city: addressData.city,
             county: addressData.county,
             success: false,
-            error: data.error || 'Unknown error'
+            error: data.error || "Unknown error",
           };
         }
       } catch (error: unknown) {
@@ -104,7 +111,7 @@ export async function POST(request: NextRequest) {
           city: addressData.city,
           county: addressData.county,
           success: false,
-          error: error instanceof Error ? error.message : 'Network error'
+          error: error instanceof Error ? error.message : "Network error",
         };
       }
     };
@@ -114,8 +121,10 @@ export async function POST(request: NextRequest) {
       const percentage = Math.round((processed / total) * 100);
       const elapsed = Date.now() - startTime;
       const rate = processed / (elapsed / 1000);
-      
-      console.log(`[BATCH-GEMINI] Progress: ${processed}/${total} (${percentage}%) - Rate: ${rate.toFixed(2)} addresses/sec - Errors: ${errors}`);
+
+      console.log(
+        `[BATCH-GEMINI] Progress: ${processed}/${total} (${percentage}%) - Rate: ${rate.toFixed(2)} addresses/sec - Errors: ${errors}`
+      );
     };
 
     // Procesar en batches
@@ -128,11 +137,15 @@ export async function POST(request: NextRequest) {
     const endTime = Date.now();
     const totalTime = (endTime - startTime) / 1000;
     const avgRate = addresses.length / totalTime;
-    const successCount = results.filter(r => r.success).length;
-    const errorCount = results.filter(r => !r.success).length;
+    const successCount = results.filter((r) => r.success).length;
+    const errorCount = results.filter((r) => !r.success).length;
 
-    console.log(`[BATCH-GEMINI] Completed: ${addresses.length} addresses in ${totalTime.toFixed(2)}s`);
-    console.log(`[BATCH-GEMINI] Success: ${successCount}, Errors: ${errorCount}, Rate: ${avgRate.toFixed(2)} addr/sec`);
+    console.log(
+      `[BATCH-GEMINI] Completed: ${addresses.length} addresses in ${totalTime.toFixed(2)}s`
+    );
+    console.log(
+      `[BATCH-GEMINI] Success: ${successCount}, Errors: ${errorCount}, Rate: ${avgRate.toFixed(2)} addr/sec`
+    );
 
     return NextResponse.json({
       success: true,
@@ -143,12 +156,13 @@ export async function POST(request: NextRequest) {
         failed: errorCount,
         processingTime: totalTime,
         averageRate: avgRate,
-        provider: 'gemini-optimized',
-        environment: batchProcessor.getEnvironment().isRailway ? 'Railway' : 'localhost',
-        config: batchProcessor.getConfig()
-      }
+        provider: "gemini-optimized",
+        environment: batchProcessor.getEnvironment().isRailway
+          ? "Railway"
+          : "localhost",
+        config: batchProcessor.getConfig(),
+      },
     });
-
   } catch (error) {
     console.error("Batch Gemini processing error:", error);
     return NextResponse.json(
@@ -162,7 +176,7 @@ export async function POST(request: NextRequest) {
 }
 
 function getBaseUrl(request: NextRequest): string {
-  const protocol = request.headers.get('x-forwarded-proto') || 'http';
-  const host = request.headers.get('host') || 'localhost:3000';
+  const protocol = request.headers.get("x-forwarded-proto") || "http";
+  const host = request.headers.get("host") || "localhost:3000";
   return `${protocol}://${host}`;
 }
