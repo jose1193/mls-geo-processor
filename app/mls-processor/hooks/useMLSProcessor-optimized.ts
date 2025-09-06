@@ -1808,10 +1808,10 @@ export function useMLSProcessorOptimized(userId?: string | null) {
           const batchTime = Date.now() - batchStartTime.current;
           const totalTime = Date.now() - startTime.current;
           const throughput = processedCount / (totalTime / 1000);
-          
+
           // Calculate success rate based on total records (more accurate)
           const successRate = ((successCount / totalRecords) * 100).toFixed(1);
-          
+
           const avgProcessingTime =
             performanceMetrics.current.totalProcessingTime /
             performanceMetrics.current.totalRequests;
