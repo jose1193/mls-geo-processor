@@ -312,18 +312,22 @@ const getOptimizedConfigForSize = (recordCount: number) => {
       CACHE_EXPIRY_HOURS: 24,
     };
   } else {
-    // Very large files (30K-110K) - Adaptive based on CPU cores
-    const baseConcurrency = is8CorePlus ? 6 : 4;
-    const baseBatchSize = is8CorePlus ? 60 : 40;
-    const baseThroughput = is8CorePlus ? 15 : 8;
+    // Very large files (30K-110K) - Adaptive based on CPU cores and environment
+    const baseConcurrency = is8CorePlus ? 7 : 5; // Increased for Railway (was 6:4)
+    const baseBatchSize = is8CorePlus ? 80 : 60; // Increased for Railway (was 60:40)
+    const baseThroughput = is8CorePlus ? 18 : 12; // Increased target (was 15:8)
+    
+    // Railway optimization - detect Railway environment
+    const isRailway = process.env.RAILWAY_ENVIRONMENT === "production" || 
+                     process.env.NODE_ENV === "production";
     
     return {
-      CONCURRENCY_LIMIT: baseConcurrency,
-      BATCH_SIZE: baseBatchSize,
+      CONCURRENCY_LIMIT: isRailway ? baseConcurrency + 1 : baseConcurrency, // +1 for Railway
+      BATCH_SIZE: isRailway ? baseBatchSize + 20 : baseBatchSize, // Larger batches on Railway
       MAX_RETRIES: 2,
-      TARGET_THROUGHPUT: baseThroughput,
+      TARGET_THROUGHPUT: isRailway ? baseThroughput + 3 : baseThroughput, // Higher target on Railway
       MEMORY_CLEANUP_INTERVAL: 5000,
-      RETRY_DELAY_BASE: 2500,
+      RETRY_DELAY_BASE: isRailway ? 2000 : 2500, // Faster retries on Railway
       CACHE_EXPIRY_HOURS: 48,
     };
   }
