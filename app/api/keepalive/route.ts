@@ -33,8 +33,7 @@ export async function GET(request: NextRequest) {
     // Ping simple a Supabase para mantener la conexión activa
     const { data, error } = await supabaseAdmin
       .from("users")
-      .select("count(*)")
-      .limit(1);
+      .select("*", { count: "exact", head: true });
 
     if (error) {
       console.error("Keepalive Supabase error:", error);

@@ -95,7 +95,12 @@ export default auth(async function middleware(request: NextRequest) {
   const response = NextResponse.next();
 
   // Rutas públicas (no requieren autenticación)
-  const publicPaths = ["/auth/verify", "/auth/error", "/api/auth", "/api/keepalive"];
+  const publicPaths = [
+    "/auth/verify",
+    "/auth/error",
+    "/api/auth",
+    "/api/keepalive",
+  ];
 
   // Rutas de API que requieren validación de origen
   const apiPaths = ["/api/auth/send-otp", "/api/auth/verify-otp"];
