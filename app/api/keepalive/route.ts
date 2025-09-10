@@ -5,7 +5,22 @@ export async function GET(request: NextRequest) {
   try {
     // Log para monitoreo (mantener info del user agent para seguridad)
     const userAgent = request.headers.get("user-agent") || "";
-    console.log(`🏓 Keepalive request from: ${userAgent}`);
+    const isUptimeRobot = userAgent.toLowerCase().includes("uptimerobot") || 
+                         userAgent.toLowerCase().includes("uptime") ||
+                         userAgent.toLowerCase().includes("monitor");
+    
+    console.log(`🏓 Keepalive request from: ${userAgent}${isUptimeRobot ? ' [UPTIME BOT DETECTED]' : ''}`);
+
+    // Si es UptimeRobot, devolver respuesta rápida sin verificaciones pesadas
+    if (isUptimeRobot) {
+      console.log("🤖 UptimeRobot detected - returning fast response");
+      return NextResponse.json({
+        success: true,
+        message: "Service is up",
+        timestamp: new Date().toISOString(),
+        uptime: true,
+      });
+    }
 
     // Opcional: Verificar token solo si está configurado (para uso avanzado)
     const authHeader = request.headers.get("authorization");

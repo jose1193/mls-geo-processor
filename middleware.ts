@@ -20,10 +20,18 @@ export default auth(async function middleware(request: NextRequest) {
   // En NextAuth v5, la sesión ya está disponible en request.auth
   const session = (request as NextRequest & { auth?: Session | null }).auth;
 
+  // Detectar UptimeRobot y otros bots de monitoreo
+  const userAgent = request.headers.get("user-agent") || "";
+  const isUptimeRobot = userAgent.toLowerCase().includes("uptimerobot") || 
+                       userAgent.toLowerCase().includes("uptime") ||
+                       userAgent.toLowerCase().includes("monitor") ||
+                       userAgent.toLowerCase().includes("pingdom") ||
+                       userAgent.toLowerCase().includes("statuspage");
+
   // Debugging para Railway - solo en producción para no saturar logs de desarrollo
   if (process.env.NODE_ENV === "production") {
     console.log(
-      `[MIDDLEWARE] Path: ${pathname}, Session exists: ${!!session}, URL: ${request.url}`
+      `[MIDDLEWARE] Path: ${pathname}, Session exists: ${!!session}, URL: ${request.url}${isUptimeRobot ? ' [BOT DETECTED]' : ''}`
     );
     console.log(`[MIDDLEWARE] ENV - AUTH_URL: ${process.env.AUTH_URL}`);
     console.log(`[MIDDLEWARE] ENV - NEXTAUTH_URL: ${process.env.NEXTAUTH_URL}`);
@@ -53,8 +61,8 @@ export default auth(async function middleware(request: NextRequest) {
   const isMLSProcessingAPI = pathname.startsWith("/api/mls/");
   const isDashboardAPI = pathname.startsWith("/api/dashboard/");
 
-  // Aplicar rate limiting apropiado según el tipo de API
-  if (pathname.startsWith("/api/")) {
+  // Excluir bots de monitoreo del rate limiting
+  if (pathname.startsWith("/api/") && !isUptimeRobot) {
     let rateLimiter;
     let limitType = "general_rate_limit";
 
@@ -102,13 +110,13 @@ export default auth(async function middleware(request: NextRequest) {
     "/api/keepalive",
   ];
 
-  // Rutas de API que requieren validación de origen
+  // Rutas de API que requieren validación de origen (excluir keepalive de bots)
   const apiPaths = ["/api/auth/send-otp", "/api/auth/verify-otp"];
 
   // Aplicar headers de seguridad para APIs
   if (pathname.startsWith("/api/")) {
-    // Validar origen para APIs sensibles
-    if (apiPaths.some((path) => pathname.startsWith(path))) {
+    // Validar origen para APIs sensibles (excluir bots de monitoreo)
+    if (apiPaths.some((path) => pathname.startsWith(path)) && !isUptimeRobot) {
       const userAgent = request.headers.get("user-agent") || "";
 
       // Permitir calls internos de NextAuth
