@@ -54,7 +54,7 @@ function generateTestEmailHTML(provider: string): string {
         <p style="color: #94a3b8; font-size: 12px; margin: 0;">
           © 2025 MLS Processor. Test email sent via ${provider}.
           <br>
-          ${process.env.RAILWAY_ENVIRONMENT ? '🚂 Railway Environment' : '🏠 Development Environment'}
+          ${process.env.RAILWAY_ENVIRONMENT ? "🚂 Railway Environment" : "🏠 Development Environment"}
           <br>
           <span style="color: #f59e0b;">⚠️ This is a test email for development purposes only</span>
         </p>
@@ -71,9 +71,10 @@ export async function POST(request: NextRequest) {
     if (!process.env.SMTP_EMAIL || !process.env.SMTP_PASSWORD) {
       console.error("❌ Gmail SMTP credentials missing");
       return NextResponse.json(
-        { 
-          success: false, 
-          error: "Gmail SMTP credentials not configured. Check SMTP_EMAIL and SMTP_PASSWORD environment variables." 
+        {
+          success: false,
+          error:
+            "Gmail SMTP credentials not configured. Check SMTP_EMAIL and SMTP_PASSWORD environment variables.",
         },
         { status: 400 }
       );
@@ -82,14 +83,17 @@ export async function POST(request: NextRequest) {
     // Obtener datos del request
     const body = await request.json();
     const { email, to, subject, text, html } = body;
-    
+
     // Usar 'to' o 'email' como destinatario
     const recipient = to || email;
 
     // Validar email
     if (!recipient) {
       return NextResponse.json(
-        { success: false, error: "Email address is required (use 'to' or 'email' field)" },
+        {
+          success: false,
+          error: "Email address is required (use 'to' or 'email' field)",
+        },
         { status: 400 }
       );
     }
@@ -103,7 +107,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`📧 Attempting to send test email to: ${recipient} via Gmail SMTP`);
+    console.log(
+      `📧 Attempting to send test email to: ${recipient} via Gmail SMTP`
+    );
 
     // Crear transportador
     const transporter = createGmailTransporter();
@@ -116,10 +122,14 @@ export async function POST(request: NextRequest) {
     } catch (verifyError) {
       console.error("❌ Gmail SMTP connection failed:", verifyError);
       return NextResponse.json(
-        { 
-          success: false, 
-          error: "Gmail SMTP connection failed. This might be due to Railway Hobby plan blocking SMTP ports.",
-          details: verifyError instanceof Error ? verifyError.message : "Unknown verification error"
+        {
+          success: false,
+          error:
+            "Gmail SMTP connection failed. This might be due to Railway Hobby plan blocking SMTP ports.",
+          details:
+            verifyError instanceof Error
+              ? verifyError.message
+              : "Unknown verification error",
         },
         { status: 500 }
       );
@@ -136,7 +146,7 @@ export async function POST(request: NextRequest) {
 
     // Enviar email
     const info = await transporter.sendMail(mailOptions);
-    
+
     console.log("✅ Gmail SMTP test email sent successfully:", info.messageId);
 
     return NextResponse.json({
@@ -149,26 +159,29 @@ export async function POST(request: NextRequest) {
       subject: subject || "✅ Gmail SMTP Test - MLS Processor",
       environment: process.env.RAILWAY_ENVIRONMENT ? "Railway" : "Development",
       timestamp: new Date().toISOString(),
-      warning: process.env.RAILWAY_ENVIRONMENT ? "Gmail SMTP may be blocked on Railway Hobby plan" : undefined
+      warning: process.env.RAILWAY_ENVIRONMENT
+        ? "Gmail SMTP may be blocked on Railway Hobby plan"
+        : undefined,
     });
-
   } catch (error) {
     console.error("❌ Gmail SMTP test email error:", error);
-    
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    const isRailwayError = errorMessage.includes("ECONNREFUSED") || 
-                          errorMessage.includes("ETIMEDOUT") ||
-                          errorMessage.includes("connect");
+
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    const isRailwayError =
+      errorMessage.includes("ECONNREFUSED") ||
+      errorMessage.includes("ETIMEDOUT") ||
+      errorMessage.includes("connect");
 
     return NextResponse.json(
-      { 
-        success: false, 
+      {
+        success: false,
         error: "Failed to send test email via Gmail SMTP",
         details: errorMessage,
         provider: "Gmail SMTP",
-        suggestion: isRailwayError ? 
-          "Gmail SMTP is likely blocked on Railway Hobby plan. Try using Brevo or Resend APIs instead." :
-          "Check your Gmail SMTP credentials and app password configuration."
+        suggestion: isRailwayError
+          ? "Gmail SMTP is likely blocked on Railway Hobby plan. Try using Brevo or Resend APIs instead."
+          : "Check your Gmail SMTP credentials and app password configuration.",
       },
       { status: 500 }
     );
@@ -185,25 +198,25 @@ export async function GET() {
       to: "recipient@example.com", // También acepta 'email'
       subject: "Optional custom subject",
       text: "Optional plain text content",
-      html: "Optional HTML content"
+      html: "Optional HTML content",
     },
     example_request: {
       to: "josegonzalezcr2794@gmail.com",
       subject: "Test desde Gmail API",
       text: "¡Hola! Este es un email de prueba desde Gmail usando Postman.",
-      html: "<h1>Email de Prueba</h1><p>Este email viene desde <strong>Gmail Test</strong> 🚀</p>"
+      html: "<h1>Email de Prueba</h1><p>Este email viene desde <strong>Gmail Test</strong> 🚀</p>",
     },
-    required_env_vars: [
-      "SMTP_EMAIL",
-      "SMTP_PASSWORD"
-    ],
+    required_env_vars: ["SMTP_EMAIL", "SMTP_PASSWORD"],
     notes: [
       "Gmail SMTP requires App Password (not regular password)",
       "May be blocked on Railway Hobby plan (ports 25, 465, 587)",
       "Works fine in local development",
       "Consider using Brevo or Resend APIs for Railway deployment",
-      "Accepts both 'to' and 'email' fields for recipient address"
+      "Accepts both 'to' and 'email' fields for recipient address",
     ],
-    status: process.env.SMTP_EMAIL && process.env.SMTP_PASSWORD ? "✅ Configured" : "❌ Missing credentials"
+    status:
+      process.env.SMTP_EMAIL && process.env.SMTP_PASSWORD
+        ? "✅ Configured"
+        : "❌ Missing credentials",
   });
 }
