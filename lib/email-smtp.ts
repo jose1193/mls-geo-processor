@@ -43,6 +43,24 @@ export async function sendOTPEmailSMTP(
     
     const transporter = createTransporter();
 
+    // Test de conexión SMTP específico para Railway
+    console.log(`[EMAIL-SMTP] Testing SMTP connection...`);
+    
+    // Timeout para evitar que se cuelgue en Railway
+    const connectionTimeout = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('SMTP connection timeout')), 10000)
+    );
+    
+    const verifyConnection = transporter.verify();
+    
+    try {
+      await Promise.race([verifyConnection, connectionTimeout]);
+      console.log(`[EMAIL-SMTP] ✅ SMTP connection verified successfully`);
+    } catch (verifyError) {
+      console.error(`[EMAIL-SMTP] ❌ SMTP connection failed:`, verifyError);
+      throw new Error(`SMTP connection failed: ${verifyError instanceof Error ? verifyError.message : 'Unknown error'}`);
+    }
+
     const mailOptions = {
       from: `"MLS Processor" <${process.env.SMTP_EMAIL}>`,
       to: email,

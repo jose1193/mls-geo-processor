@@ -14,7 +14,15 @@ export async function sendOTPEmail(
     console.log(`[EMAIL] Environment - NODE_ENV: ${process.env.NODE_ENV}`);
     console.log(`[EMAIL] Email providers - SMTP: ${process.env.SMTP_EMAIL ? '✓' : '✗'}, Resend: ${process.env.RESEND_API_KEY ? '✓' : '✗'}`);
     
-    // Primero intentar con SMTP
+    // En Railway, ir directo a Resend si está disponible
+    const isRailway = process.env.RAILWAY_ENVIRONMENT === "production" || process.env.NODE_ENV === "production";
+    
+    if (isRailway && process.env.RESEND_API_KEY) {
+      console.log("[EMAIL] Railway environment detected, using Resend directly...");
+      return await sendViaResend(email, otp);
+    }
+    
+    // En localhost, intentar SMTP primero
     console.log("[EMAIL] Attempting to send OTP via SMTP...");
     const smtpSuccess = await sendOTPEmailSMTP(email, otp);
 
@@ -25,11 +33,32 @@ export async function sendOTPEmail(
 
     // Si SMTP falla, usar Resend como fallback
     console.log("[EMAIL] ⚠️ SMTP failed, falling back to Resend...");
+    return await sendViaResend(email, otp);
+  } catch (error) {
+    console.error("[EMAIL] ❌ Error in sendOTPEmail:", error);
     
+    // Log más detalles del error
+    if (error instanceof Error) {
+      console.error("[EMAIL] Error details:", {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
+    }
+    
+    return false;
+  }
+}
+
+// Función helper para enviar via Resend
+async function sendViaResend(email: string, otp: string): Promise<boolean> {
+  try {
     if (!process.env.RESEND_API_KEY) {
-      console.error("[EMAIL] ❌ No Resend API key available for fallback");
+      console.error("[EMAIL] ❌ No Resend API key available");
       return false;
     }
+    
+    console.log("[EMAIL] Sending OTP via Resend...");
     
     const { data, error } = await resend.emails.send({
       from: "MLS Processor <onboarding@resend.dev>",
@@ -80,17 +109,7 @@ export async function sendOTPEmail(
     console.log("[EMAIL] ✅ OTP email sent successfully via Resend:", data?.id);
     return true;
   } catch (error) {
-    console.error("[EMAIL] ❌ Error in sendOTPEmail:", error);
-    
-    // Log más detalles del error
-    if (error instanceof Error) {
-      console.error("[EMAIL] Error details:", {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      });
-    }
-    
+    console.error("[EMAIL] ❌ Error in sendViaResend:", error);
     return false;
   }
 }
