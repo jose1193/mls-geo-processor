@@ -101,6 +101,7 @@ export default auth(async function middleware(request: NextRequest) {
     "/api/auth",
     "/api/keepalive",
     "/api/test-email",
+    "/api/test-email-resend",
   ];
 
   // Rutas de API que requieren validación de origen

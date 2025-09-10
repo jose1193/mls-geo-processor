@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface EmailResponse {
   success: boolean;
@@ -17,9 +17,11 @@ interface EmailResponse {
 }
 
 export default function TestEmailPage() {
-  const [email, setEmail] = useState('');
-  const [subject, setSubject] = useState('Test Email from MLS Listings');
-  const [message, setMessage] = useState('This is a test email to verify the email functionality is working correctly.');
+  const [email, setEmail] = useState("");
+  const [subject, setSubject] = useState("Test Email from MLS Listings");
+  const [message, setMessage] = useState(
+    "This is a test email to verify the email functionality is working correctly."
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [response, setResponse] = useState<EmailResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,10 +33,10 @@ export default function TestEmailPage() {
     setError(null);
 
     try {
-      const res = await fetch('/api/test-email', {
-        method: 'POST',
+      const res = await fetch("/api/test-email", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           to: email,
@@ -48,11 +50,11 @@ export default function TestEmailPage() {
       if (res.ok) {
         setResponse(data);
       } else {
-        setError(data.error || 'Failed to send email');
+        setError(data.error || "Failed to send email");
       }
     } catch (err) {
-      setError('Network error occurred');
-      console.error('Error:', err);
+      setError("Network error occurred");
+      console.error("Error:", err);
     } finally {
       setIsLoading(false);
     }
@@ -64,15 +66,15 @@ export default function TestEmailPage() {
     setError(null);
 
     try {
-      const res = await fetch('/api/test-email', {
-        method: 'POST',
+      const res = await fetch("/api/test-email", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          to: 'geocodingmls@gmail.com',
-          subject: 'Quick Test Email',
-          text: 'This is a quick test email from MLS Listings application.',
+          to: "geocodingmls@gmail.com",
+          subject: "Quick Test Email",
+          text: "This is a quick test email from MLS Listings application.",
         }),
       });
 
@@ -81,11 +83,11 @@ export default function TestEmailPage() {
       if (res.ok) {
         setResponse(data);
       } else {
-        setError(data.error || 'Failed to send email');
+        setError(data.error || "Failed to send email");
       }
     } catch (err) {
-      setError('Network error occurred');
-      console.error('Error:', err);
+      setError("Network error occurred");
+      console.error("Error:", err);
     } finally {
       setIsLoading(false);
     }
@@ -113,7 +115,7 @@ export default function TestEmailPage() {
                 required
               />
             </div>
-            
+
             <div>
               <Label htmlFor="subject">Subject</Label>
               <Input
@@ -124,7 +126,7 @@ export default function TestEmailPage() {
                 placeholder="Email subject"
               />
             </div>
-            
+
             <div>
               <Label htmlFor="message">Message</Label>
               <textarea
@@ -135,15 +137,15 @@ export default function TestEmailPage() {
                 placeholder="Email message content"
               />
             </div>
-            
+
             <div className="flex gap-2">
               <Button type="submit" disabled={isLoading || !email}>
-                {isLoading ? 'Sending...' : 'Send Test Email'}
+                {isLoading ? "Sending..." : "Send Test Email"}
               </Button>
-              
-              <Button 
-                type="button" 
-                variant="outline" 
+
+              <Button
+                type="button"
+                variant="outline"
                 onClick={testQuickSend}
                 disabled={isLoading}
               >
@@ -156,9 +158,15 @@ export default function TestEmailPage() {
             <Alert>
               <AlertDescription>
                 <div className="space-y-2">
-                  <p className="font-semibold text-green-600">✅ Email sent successfully!</p>
-                  <p><strong>Message ID:</strong> {response.data?.id}</p>
-                  <p><strong>Status:</strong> {response.data?.message}</p>
+                  <p className="font-semibold text-green-600">
+                    ✅ Email sent successfully!
+                  </p>
+                  <p>
+                    <strong>Message ID:</strong> {response.data?.id}
+                  </p>
+                  <p>
+                    <strong>Status:</strong> {response.data?.message}
+                  </p>
                 </div>
               </AlertDescription>
             </Alert>
@@ -175,11 +183,17 @@ export default function TestEmailPage() {
 
           <div className="mt-6 p-4 bg-gray-50 rounded-md">
             <h3 className="font-semibold mb-2">API Endpoint Information:</h3>
-            <p><strong>URL:</strong> <code>/api/test-email</code></p>
-            <p><strong>Method:</strong> POST</p>
-            <p><strong>Content-Type:</strong> application/json</p>
+            <p>
+              <strong>URL:</strong> <code>/api/test-email</code>
+            </p>
+            <p>
+              <strong>Method:</strong> POST
+            </p>
+            <p>
+              <strong>Content-Type:</strong> application/json
+            </p>
             <pre className="mt-2 text-sm bg-gray-100 p-2 rounded overflow-x-auto">
-{`{
+              {`{
   "to": "recipient@example.com",
   "subject": "Optional subject",
   "text": "Email content",
