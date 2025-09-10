@@ -54,7 +54,8 @@ export default auth(async function middleware(request: NextRequest) {
   const isDashboardAPI = pathname.startsWith("/api/dashboard/");
 
   // Aplicar rate limiting apropiado según el tipo de API
-  if (pathname.startsWith("/api/") && !pathname.startsWith("/api/keepalive")) {
+  // Excluir keepalive del rate limiting para evitar interferencia con UptimeRobot
+  if (pathname.startsWith("/api/") && pathname !== "/api/keepalive") {
     let rateLimiter;
     let limitType = "general_rate_limit";
 
