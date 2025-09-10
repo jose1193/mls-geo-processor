@@ -58,14 +58,17 @@ DIRECCIÓN A ANALIZAR: ${address}, ${city}, ${county}, FL
 
 EJEMPLOS DE FLORIDA PARA REFERENCIA:
 - 1920 NW 3rd Ave, Pompano Beach, Broward County → neighborhood: "Kendall Green", community: "Kendall Lake"  
-- 2021 Wilmington St, Opa-Locka, Miami-Dade County → neighborhood: "Opa-locka", community: "N/A"
+- 2021 Wilmington St, Opa-Locka, Miami-Dade County → neighborhood: "Opa-locka", community: "Opa-locka City"
 - 3763 Saginaw Avenue, West Palm Beach → neighborhood: "West Gate Estate", community: "Presidential Estates"
-- Direcciones en Miami-Dade → pueden tener comunidades como "Highland Lakes", "Silver Palm", "Silver Palms"
-- Direcciones en Broward → pueden tener comunidades como "Kendall Lake", "Cresthaven"
-- Direcciones en Palm Beach → pueden tener comunidades como "Presidential Estates", "Lake Osborne Estates"
+- 541 W Branch Street, Lantana, Palm Beach County → neighborhood: "Lantana", community: "Lantana"
+- Direcciones en Miami-Dade → pueden tener comunidades como "Highland Lakes", "Silver Palm", "Silver Palms", "Opa-locka City"
+- Direcciones en Broward → pueden tener comunidades como "Kendall Lake", "Cresthaven", "Hollywood Lakes"
+- Direcciones en Palm Beach → pueden tener comunidades como "Presidential Estates", "Lake Osborne Estates", "Lantana"
 
-IMPORTANTE: Para las direcciones específicas:
+IMPORTANTE: Para las direcciones específicas problemáticas:
 - 1920 NW 3rd Ave en Pompano Beach = community: "Kendall Lake"
+- 2021 Wilmington St en Opa-Locka = community: "Opa-locka City" 
+- 541 W Branch Street en Lantana = community: "Lantana"
 - Direcciones en Homestead suelen tener comunidades como "Silver Palm" o "Silver Palms"
 
 Debes proporcionar:

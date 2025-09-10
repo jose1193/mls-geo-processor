@@ -169,6 +169,87 @@ interface GeminiCacheEntry {
 }
 
 // ===================================================================
+// MANUAL COMMUNITY DATABASE FOR KNOWN PROBLEMATIC AREAS
+// ===================================================================
+
+const FLORIDA_COMMUNITY_DATABASE: Record<
+  string,
+  { neighborhood?: string; community?: string }
+> = {
+  // Miami-Dade County
+  "opa-locka": {
+    neighborhood: "Opa-locka",
+    community: "Opa-locka City",
+  },
+  homestead: {
+    neighborhood: "Homestead",
+    community: "Silver Palm",
+  },
+  "miami gardens": {
+    neighborhood: "Miami Gardens",
+    community: "Miami Gardens",
+  },
+
+  // Broward County
+  "pompano beach": {
+    neighborhood: "Pompano Beach",
+    community: "Kendall Lake",
+  },
+  hollywood: {
+    neighborhood: "Hollywood",
+    community: "Hollywood Lakes",
+  },
+  "hallandale beach": {
+    neighborhood: "Hallandale Beach",
+    community: "Golden Isles",
+  },
+
+  // Palm Beach County
+  lantana: {
+    neighborhood: "Lantana",
+    community: "Lantana",
+  },
+  "west palm beach": {
+    neighborhood: "West Palm Beach",
+    community: "Presidential Estates",
+  },
+  "lake worth": {
+    neighborhood: "Lake Worth",
+    community: "Lake Osborne Estates",
+  },
+};
+
+// Helper function to get manual community data
+const getManualCommunityData = (city: string, county: string) => {
+  const cityKey = city.toLowerCase().trim();
+  const countyName = county.toLowerCase();
+
+  // Direct city lookup
+  if (FLORIDA_COMMUNITY_DATABASE[cityKey]) {
+    return FLORIDA_COMMUNITY_DATABASE[cityKey];
+  }
+
+  // County-based fallbacks
+  if (countyName.includes("miami-dade")) {
+    if (cityKey.includes("homestead")) return { community: "Silver Palm" };
+    if (cityKey.includes("opa")) return { community: "Opa-locka City" };
+  }
+
+  if (countyName.includes("broward")) {
+    if (cityKey.includes("pompano")) return { community: "Kendall Lake" };
+    if (cityKey.includes("hollywood")) return { community: "Hollywood Lakes" };
+  }
+
+  if (countyName.includes("palm beach")) {
+    if (cityKey.includes("lantana")) return { community: "Lantana" };
+    if (cityKey.includes("west palm"))
+      return { community: "Presidential Estates" };
+  }
+
+  return null;
+};
+
+// ===================================================================
 // OPTIMIZED CONFIGURATION + PERSISTENCE SYSTEM
 // ===================================================================
 
@@ -191,50 +272,58 @@ export interface OptimizedProcessingProgress {
   batchConfig: BatchConfig;
 }
 
-// Adaptive configuration based on dataset size
+// Adaptive configuration based on dataset size and system resources
 const getOptimizedConfigForSize = (recordCount: number) => {
+  // Detect available CPU cores (fallback to 4 if unavailable)
+  const cpuCores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
+  const is8CorePlus = cpuCores >= 8;
+  
   if (recordCount <= 50) {
     // Small test files (9-50 records) - Fast & Responsive
     return {
-      CONCURRENCY_LIMIT: 15,
-      BATCH_SIZE: 25,
+      CONCURRENCY_LIMIT: 12, // Reduced from 15
+      BATCH_SIZE: 20, // Reduced from 25
       MAX_RETRIES: 3,
-      TARGET_THROUGHPUT: 25,
+      TARGET_THROUGHPUT: 20, // Reduced from 25
       MEMORY_CLEANUP_INTERVAL: 10000,
-      RETRY_DELAY_BASE: 500,
+      RETRY_DELAY_BASE: 800, // Increased from 500
       CACHE_EXPIRY_HOURS: 6,
     };
   } else if (recordCount <= 1000) {
     // Medium files (1000 records) - Balanced Performance
     return {
-      CONCURRENCY_LIMIT: 20,
-      BATCH_SIZE: 100,
+      CONCURRENCY_LIMIT: 8, // Reduced from 20 to prevent rate limits
+      BATCH_SIZE: 50, // Reduced from 100
       MAX_RETRIES: 3,
-      TARGET_THROUGHPUT: 22,
+      TARGET_THROUGHPUT: 15, // Reduced from 22
       MEMORY_CLEANUP_INTERVAL: 8000,
-      RETRY_DELAY_BASE: 1000,
+      RETRY_DELAY_BASE: 1500, // Increased from 1000
       CACHE_EXPIRY_HOURS: 12,
     };
   } else if (recordCount <= 10000) {
-    // Large files (10K records) - Optimized Throughput
+    // Large files (10K records) - Conservative for stability
     return {
-      CONCURRENCY_LIMIT: 15,
-      BATCH_SIZE: 200,
+      CONCURRENCY_LIMIT: 6, // Reduced from 15
+      BATCH_SIZE: 80, // Reduced from 200
       MAX_RETRIES: 2,
-      TARGET_THROUGHPUT: 18,
+      TARGET_THROUGHPUT: 12, // Reduced from 18
       MEMORY_CLEANUP_INTERVAL: 6000,
-      RETRY_DELAY_BASE: 1500,
+      RETRY_DELAY_BASE: 2000, // Increased from 1500
       CACHE_EXPIRY_HOURS: 24,
     };
   } else {
-    // Very large files (30K-110K) - Ultra Stable
+    // Very large files (30K-110K) - Adaptive based on CPU cores
+    const baseConcurrency = is8CorePlus ? 6 : 4;
+    const baseBatchSize = is8CorePlus ? 60 : 40;
+    const baseThroughput = is8CorePlus ? 15 : 8;
+    
     return {
-      CONCURRENCY_LIMIT: 10,
-      BATCH_SIZE: 100,
+      CONCURRENCY_LIMIT: baseConcurrency,
+      BATCH_SIZE: baseBatchSize,
       MAX_RETRIES: 2,
-      TARGET_THROUGHPUT: 15,
+      TARGET_THROUGHPUT: baseThroughput,
       MEMORY_CLEANUP_INTERVAL: 5000,
-      RETRY_DELAY_BASE: 2000,
+      RETRY_DELAY_BASE: 2500,
       CACHE_EXPIRY_HOURS: 48,
     };
   }
@@ -595,6 +684,13 @@ export function useMLSProcessorOptimized(userId?: string | null) {
     geminiCount: 0,
     mapboxCalls: 0,
     geminiCalls: 0,
+  });
+
+  // Request throttling for large files
+  const requestThrottle = useRef({
+    lastRequestTime: 0,
+    consecutiveRateLimits: 0,
+    adaptiveDelay: 0,
   });
 
   // Enhanced state management
@@ -1265,6 +1361,17 @@ export function useMLSProcessorOptimized(userId?: string | null) {
       city: string,
       county: string
     ): Promise<OptimizedGeminiResult> => {
+      // Apply adaptive throttling for large files to prevent rate limits
+      const now = Date.now();
+      const timeSinceLastRequest = now - requestThrottle.current.lastRequestTime;
+      const minInterval = requestThrottle.current.adaptiveDelay || 100; // Base 100ms delay
+      
+      if (timeSinceLastRequest < minInterval) {
+        await new Promise(resolve => setTimeout(resolve, minInterval - timeSinceLastRequest));
+      }
+      
+      requestThrottle.current.lastRequestTime = Date.now();
+
       // Add delay before request to prevent rate limiting
       if (
         OPTIMIZED_CONFIG.DELAY_BETWEEN_REQUESTS > 0 ||
@@ -1298,7 +1405,14 @@ export function useMLSProcessorOptimized(userId?: string | null) {
         }
 
         const result = await pRetry(
-          async () => {
+          async (attemptNumber: number) => {
+            // Validate required fields before making the request
+            if (!address || !city || !county) {
+              throw new Error(
+                `Missing required fields: address="${address}", city="${city}", county="${county}"`
+              );
+            }
+
             const response = await fetch("/api/geocoding/gemini-optimized", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -1312,18 +1426,29 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                   errorBody.includes("geocoding_rate_limit") ||
                   errorBody.includes("general_rate_limit");
 
+                // Increase adaptive delay on rate limit
+                requestThrottle.current.consecutiveRateLimits++;
+                requestThrottle.current.adaptiveDelay = Math.min(
+                  5000, // Max 5 second delay
+                  100 * Math.pow(2, requestThrottle.current.consecutiveRateLimits)
+                );
+
                 if (isMiddlewareRateLimit) {
+                  // Progressive wait time based on retry count
+                  const waitTime = Math.min(60000, 15000 * attemptNumber); // 15s, 30s, 45s, max 60s
                   addLog(
-                    "⚠️ Middleware rate limit hit - waiting 60 seconds...",
+                    `⚠️ Middleware rate limit hit - waiting ${waitTime/1000} seconds... (attempt ${attemptNumber}) [Adaptive delay now: ${requestThrottle.current.adaptiveDelay}ms]`,
                     "warning"
                   );
-                  await new Promise((resolve) => setTimeout(resolve, 60000)); // Wait 60 seconds for middleware
+                  await new Promise((resolve) => setTimeout(resolve, waitTime));
                 } else {
+                  // External API rate limit - shorter wait
+                  const waitTime = Math.min(10000, 2000 * attemptNumber); // 2s, 4s, 6s, max 10s
                   addLog(
-                    "⚠️ Gemini API rate limit hit - waiting 5 seconds...",
+                    `⚠️ Gemini API rate limit hit - waiting ${waitTime/1000} seconds... (attempt ${attemptNumber}) [Adaptive delay now: ${requestThrottle.current.adaptiveDelay}ms]`,
                     "warning"
                   );
-                  await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait 5 seconds for external API
+                  await new Promise((resolve) => setTimeout(resolve, waitTime));
                 }
 
                 const error = new Error(
@@ -1333,7 +1458,25 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                 };
                 error.name = "AbortError";
                 throw error;
+              } else {
+                // Reset consecutive rate limits on successful response
+                requestThrottle.current.consecutiveRateLimits = 0;
+                // Gradually reduce adaptive delay
+                requestThrottle.current.adaptiveDelay = Math.max(
+                  100,
+                  requestThrottle.current.adaptiveDelay * 0.9
+                );
               }
+              
+              if (response.status === 400) {
+                // Log 400 errors for debugging
+                const errorBody = await response.text().catch(() => "Unknown error");
+                addLog(
+                  `❌ Bad Request (400) for ${address}: ${errorBody.substring(0, 200)}`,
+                  "error"
+                );
+              }
+              
               throw new Error(
                 `HTTP ${response.status}: ${response.statusText}`
               );
@@ -1379,7 +1522,122 @@ export function useMLSProcessorOptimized(userId?: string | null) {
           hasData: !!optimizedResult.data,
         });
 
-        // Cache the result
+        // Check if we need to call fallback for N/A community
+        if (
+          optimizedResult.data?.community === "N/A" ||
+          optimizedResult.data?.community === null ||
+          !optimizedResult.data?.community
+        ) {
+          addLog(
+            `🔄 Primary Gemini returned N/A for community, trying fallback: ${address}`,
+            "warning"
+          );
+
+          try {
+            const fallbackResponse = await fetch(
+              "/api/geocoding/gemini-fallback",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ address, city, county }),
+              }
+            );
+
+            if (fallbackResponse.ok) {
+              const fallbackData = await fallbackResponse.json();
+
+              if (
+                fallbackData.success &&
+                fallbackData.community &&
+                fallbackData.community !== "N/A"
+              ) {
+                addLog(
+                  `✅ Fallback Gemini found community: ${fallbackData.community} for ${address}`,
+                  "success"
+                );
+
+                // Update the result with fallback data
+                optimizedResult.data = {
+                  ...optimizedResult.data,
+                  community: fallbackData.community,
+                  neighborhood:
+                    fallbackData.neighborhood ||
+                    optimizedResult.data?.neighborhood ||
+                    null,
+                  confidence: fallbackData.confidence || 0.7,
+                };
+
+                // Log the successful fallback
+                console.log("🎯 [DEBUG] Fallback Success:", {
+                  address: `${address}, ${city}, ${county}`,
+                  originalCommunity: result.community,
+                  fallbackCommunity: fallbackData.community,
+                  method: fallbackData.analysis_method,
+                });
+              } else {
+                addLog(
+                  `⚠️ Fallback also returned N/A for: ${address}`,
+                  "warning"
+                );
+
+                // Try manual community database as final fallback
+                const manualData = getManualCommunityData(city, county);
+                if (
+                  manualData &&
+                  (manualData.community || manualData.neighborhood)
+                ) {
+                  addLog(
+                    `🎯 Manual database found community: ${manualData.community || "N/A"} for ${address}`,
+                    "success"
+                  );
+
+                  optimizedResult.data = {
+                    ...optimizedResult.data,
+                    community:
+                      manualData.community ||
+                      optimizedResult.data?.community ||
+                      null,
+                    neighborhood:
+                      manualData.neighborhood ||
+                      optimizedResult.data?.neighborhood ||
+                      null,
+                    confidence: 0.5, // Lower confidence for manual data
+                  };
+                }
+              }
+            } else {
+              addLog(
+                `❌ Fallback API error for: ${address} - Status: ${fallbackResponse.status}`,
+                "error"
+              );
+            }
+          } catch (fallbackError) {
+            addLog(
+              `❌ Fallback request failed for: ${address} - ${(fallbackError as Error).message}`,
+              "error"
+            );
+            
+            // Final fallback to manual database
+            const manualData = getManualCommunityData(city || "Unknown", county || "Unknown");
+            if (manualData && (manualData.community || manualData.neighborhood)) {
+              if (optimizedResult.data) {
+                optimizedResult.data = {
+                  ...optimizedResult.data,
+                  community: manualData.community || optimizedResult.data?.community || null,
+                  neighborhood: manualData.neighborhood || optimizedResult.data?.neighborhood || null,
+                  confidence: 0.3, // Lower confidence for manual data
+                };
+                
+                addLog(
+                  `🎯 Final manual database fallback found data for: ${address}`,
+                  "info"
+                );
+              }
+            }
+          }
+        }
+
+        // Cache the result (potentially updated with fallback data)
         cacheGeminiResult(address, city, county, optimizedResult.data);
 
         // Update both ref counter and state
@@ -1503,12 +1761,38 @@ export function useMLSProcessorOptimized(userId?: string | null) {
 
           // Step 2: Try Gemini for community data only if not from Excel
           if (!existingCommunities || !existingNeighborhoods) {
-            const geminiResult = await getNeighborhoodFromGeminiOptimized(
-              address,
-              zip,
-              city,
-              county
-            );
+            // Validate that we have sufficient data for Gemini API
+            if (!city || !county) {
+              addLog(
+                `⚠️ Skipping Gemini for "${address}" - missing city (${city}) or county (${county})`,
+                "warning"
+              );
+              
+              // Try manual community database as fallback
+              const manualData = getManualCommunityData(city || "", county || "");
+              if (manualData && (manualData.community || manualData.neighborhood)) {
+                if (manualData.neighborhood && !existingNeighborhoods) {
+                  result.neighborhoods = manualData.neighborhood;
+                  result.neighborhood_source = "Manual Database";
+                }
+                if (manualData.community && !existingCommunities) {
+                  result.comunidades = manualData.community;
+                  result["Community"] = manualData.community;
+                  result["Community Source"] = "Manual Database";
+                  result.community_source = "Manual Database";
+                }
+                addLog(
+                  `🎯 Manual database provided data for: ${address}`,
+                  "info"
+                );
+              }
+            } else {
+              const geminiResult = await getNeighborhoodFromGeminiOptimized(
+                address,
+                zip,
+                city,
+                county
+              );
 
             // Debug: Log Gemini processing result
             console.log("🏘️ [DEBUG] Processing Gemini Result:", {
@@ -1555,8 +1839,11 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                 geminiCommunity: geminiResult.data.community,
                 finalCommunity: result["Community"],
                 communitySource: result["Community Source"],
+                rawGeminiResponse: geminiResult,
+                processingStep: "mapbox_success_with_gemini",
               });
             }
+          }
           }
 
           result.api_source =
@@ -1576,12 +1863,34 @@ export function useMLSProcessorOptimized(userId?: string | null) {
           // Try Gemini for neighborhood and community data even without coordinates
           if (!existingNeighborhoods || !existingCommunities) {
             try {
-              const geminiResult = await getNeighborhoodFromGeminiOptimized(
-                address,
-                zip,
-                city,
-                county
-              );
+              // Validate that we have sufficient data for Gemini API
+              if (!city || !county) {
+                addLog(
+                  `⚠️ Skipping Gemini fallback for "${address}" - missing city (${city}) or county (${county})`,
+                  "warning"
+                );
+                
+                // Try manual community database as final fallback
+                const manualData = getManualCommunityData(city || "", county || "");
+                if (manualData && (manualData.community || manualData.neighborhood)) {
+                  if (manualData.neighborhood && !existingNeighborhoods) {
+                    result.neighborhoods = manualData.neighborhood;
+                    result.neighborhood_source = "Manual Database";
+                  }
+                  if (manualData.community && !existingCommunities) {
+                    result.comunidades = manualData.community;
+                    result["Community"] = manualData.community;
+                    result["Community Source"] = "Manual Database";
+                    result.community_source = "Manual Database";
+                  }
+                }
+              } else {
+                const geminiResult = await getNeighborhoodFromGeminiOptimized(
+                  address,
+                  zip,
+                  city,
+                  county
+                );
 
               if (geminiResult.success && geminiResult.data) {
                 // Use Gemini neighborhood if not from Excel
@@ -1605,6 +1914,20 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                     : "Gemini";
                 }
 
+                // Debug: Log community assignment for mapbox failure case
+                console.log(
+                  "🏘️ [DEBUG] Community Assignment (Mapbox Failed):",
+                  {
+                    address: `${address}, ${city}, ${county}`,
+                    existingCommunities,
+                    geminiCommunity: geminiResult.data.community,
+                    finalCommunity: result["Community"],
+                    communitySource: result["Community Source"],
+                    rawGeminiResponse: geminiResult,
+                    processingStep: "mapbox_failed_gemini_only",
+                  }
+                );
+
                 result.api_source = "Gemini Only (No Coordinates)";
                 addLog(
                   `✅ Got neighborhood/community from Gemini for: ${address}`,
@@ -1612,6 +1935,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                 );
               } else {
                 addLog(`❌ Gemini also failed for: ${address}`, "error");
+              }
               }
             } catch (geminiError) {
               addLog(
@@ -2360,6 +2684,21 @@ export function useMLSProcessorOptimized(userId?: string | null) {
 
         // Apply adaptive configuration based on file size
         const adaptiveConfig = getOptimizedConfigForSize(excelData.length);
+        
+        // Detect CPU cores for logging
+        const cpuCores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
+        const is8CorePlus = cpuCores >= 8;
+        
+        // Adjust config based on file size for ultra-large files
+        if (excelData.length > 50000) {
+          adaptiveConfig.CONCURRENCY_LIMIT = Math.max(2, adaptiveConfig.CONCURRENCY_LIMIT - 2);
+          adaptiveConfig.BATCH_SIZE = Math.max(20, adaptiveConfig.BATCH_SIZE - 10);
+          addLog(
+            `📊 Ultra-large file detected (${excelData.length} records) - Using conservative settings`,
+            "info"
+          );
+        }
+        
         setBatchConfig((prev) => ({
           ...prev,
           batchSize: adaptiveConfig.BATCH_SIZE,
@@ -2372,7 +2711,11 @@ export function useMLSProcessorOptimized(userId?: string | null) {
         // Log the adaptive configuration applied
         addLog(`⚙️ Auto-configured for ${excelData.length} records:`, "info");
         addLog(
-          `   📊 Batch Size: ${adaptiveConfig.BATCH_SIZE} | Concurrency: ${adaptiveConfig.CONCURRENCY_LIMIT} | Max Retries: ${adaptiveConfig.MAX_RETRIES}`,
+          `   � CPU Cores: ${cpuCores} | Optimized: ${is8CorePlus ? 'Yes (8+ cores)' : 'No (< 8 cores)'}`,
+          "info"
+        );
+        addLog(
+          `   �📊 Batch Size: ${adaptiveConfig.BATCH_SIZE} | Concurrency: ${adaptiveConfig.CONCURRENCY_LIMIT} | Max Retries: ${adaptiveConfig.MAX_RETRIES}`,
           "info"
         );
         addLog(

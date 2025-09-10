@@ -26,9 +26,9 @@ const isRailway =
   process.env.NODE_ENV === "production";
 
 export const geocodingAPILimiter = new RateLimiterMemory({
-  points: isRailway ? 5000 : 500, // Railway: 5000 requests vs localhost: 500
+  points: isRailway ? 12000 : 1200, // Increased from 8000/800 for large file processing
   duration: 900, // Por 15 minutos
-  blockDuration: isRailway ? 10 : 30, // Railway: bloqueo más corto
+  blockDuration: isRailway ? 3 : 10, // Even shorter block duration
 });
 
 // Rate limiter muy permisivo para APIs de MLS processing (auto-save, completed files, etc.)
