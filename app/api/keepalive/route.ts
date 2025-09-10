@@ -3,16 +3,18 @@ import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET(request: NextRequest) {
   try {
-    // Verificar que la request viene de GitHub Actions o un servicio autorizado
+    // Log para monitoreo (mantener info del user agent para seguridad)
     const userAgent = request.headers.get("user-agent") || "";
-    const authHeader = request.headers.get("authorization");
+    console.log(`🏓 Keepalive request from: ${userAgent}`);
 
-    // Verificar token de autorización (opcional pero recomendado)
-    if (
-      process.env.KEEPALIVE_SECRET &&
-      authHeader !== `Bearer ${process.env.KEEPALIVE_SECRET}`
-    ) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Opcional: Verificar token solo si está configurado (para uso avanzado)
+    const authHeader = request.headers.get("authorization");
+    if (process.env.KEEPALIVE_SECRET && authHeader) {
+      if (authHeader !== `Bearer ${process.env.KEEPALIVE_SECRET}`) {
+        console.log("❌ Invalid keepalive token provided");
+        return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+      }
+      console.log("✅ Valid keepalive token provided");
     }
 
     // Verificar que Supabase admin está disponible
