@@ -1,3 +1,6 @@
+import { sendOTPEmailSMTP } from "./email-smtp";
+
+// Fallback a Resend si SMTP falla (opcional)
 import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -7,6 +10,17 @@ export async function sendOTPEmail(
   otp: string
 ): Promise<boolean> {
   try {
+    // Primero intentar con SMTP
+    console.log("Attempting to send OTP via SMTP...");
+    const smtpSuccess = await sendOTPEmailSMTP(email, otp);
+
+    if (smtpSuccess) {
+      console.log("OTP sent successfully via SMTP");
+      return true;
+    }
+
+    // Si SMTP falla, usar Resend como fallback (solo para testing)
+    console.log("SMTP failed, falling back to Resend...");
     const { data, error } = await resend.emails.send({
       from: "MLS Processor <onboarding@resend.dev>",
       to: [email],
