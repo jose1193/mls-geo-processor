@@ -275,9 +275,10 @@ export interface OptimizedProcessingProgress {
 // Adaptive configuration based on dataset size and system resources
 const getOptimizedConfigForSize = (recordCount: number) => {
   // Detect available CPU cores (fallback to 4 if unavailable)
-  const cpuCores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
+  const cpuCores =
+    typeof navigator !== "undefined" ? navigator.hardwareConcurrency || 4 : 4;
   const is8CorePlus = cpuCores >= 8;
-  
+
   if (recordCount <= 50) {
     // Small test files (9-50 records) - Fast & Responsive
     return {
@@ -316,11 +317,12 @@ const getOptimizedConfigForSize = (recordCount: number) => {
     const baseConcurrency = is8CorePlus ? 7 : 5; // Increased for Railway (was 6:4)
     const baseBatchSize = is8CorePlus ? 80 : 60; // Increased for Railway (was 60:40)
     const baseThroughput = is8CorePlus ? 18 : 12; // Increased target (was 15:8)
-    
+
     // Railway optimization - detect Railway environment
-    const isRailway = process.env.RAILWAY_ENVIRONMENT === "production" || 
-                     process.env.NODE_ENV === "production";
-    
+    const isRailway =
+      process.env.RAILWAY_ENVIRONMENT === "production" ||
+      process.env.NODE_ENV === "production";
+
     return {
       CONCURRENCY_LIMIT: isRailway ? baseConcurrency + 1 : baseConcurrency, // +1 for Railway
       BATCH_SIZE: isRailway ? baseBatchSize + 20 : baseBatchSize, // Larger batches on Railway
@@ -1367,13 +1369,16 @@ export function useMLSProcessorOptimized(userId?: string | null) {
     ): Promise<OptimizedGeminiResult> => {
       // Apply adaptive throttling for large files to prevent rate limits
       const now = Date.now();
-      const timeSinceLastRequest = now - requestThrottle.current.lastRequestTime;
+      const timeSinceLastRequest =
+        now - requestThrottle.current.lastRequestTime;
       const minInterval = requestThrottle.current.adaptiveDelay || 100; // Base 100ms delay
-      
+
       if (timeSinceLastRequest < minInterval) {
-        await new Promise(resolve => setTimeout(resolve, minInterval - timeSinceLastRequest));
+        await new Promise((resolve) =>
+          setTimeout(resolve, minInterval - timeSinceLastRequest)
+        );
       }
-      
+
       requestThrottle.current.lastRequestTime = Date.now();
 
       // Add delay before request to prevent rate limiting
@@ -1434,14 +1439,15 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                 requestThrottle.current.consecutiveRateLimits++;
                 requestThrottle.current.adaptiveDelay = Math.min(
                   5000, // Max 5 second delay
-                  100 * Math.pow(2, requestThrottle.current.consecutiveRateLimits)
+                  100 *
+                    Math.pow(2, requestThrottle.current.consecutiveRateLimits)
                 );
 
                 if (isMiddlewareRateLimit) {
                   // Progressive wait time based on retry count
                   const waitTime = Math.min(60000, 15000 * attemptNumber); // 15s, 30s, 45s, max 60s
                   addLog(
-                    `⚠️ Middleware rate limit hit - waiting ${waitTime/1000} seconds... (attempt ${attemptNumber}) [Adaptive delay now: ${requestThrottle.current.adaptiveDelay}ms]`,
+                    `⚠️ Middleware rate limit hit - waiting ${waitTime / 1000} seconds... (attempt ${attemptNumber}) [Adaptive delay now: ${requestThrottle.current.adaptiveDelay}ms]`,
                     "warning"
                   );
                   await new Promise((resolve) => setTimeout(resolve, waitTime));
@@ -1449,7 +1455,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                   // External API rate limit - shorter wait
                   const waitTime = Math.min(10000, 2000 * attemptNumber); // 2s, 4s, 6s, max 10s
                   addLog(
-                    `⚠️ Gemini API rate limit hit - waiting ${waitTime/1000} seconds... (attempt ${attemptNumber}) [Adaptive delay now: ${requestThrottle.current.adaptiveDelay}ms]`,
+                    `⚠️ Gemini API rate limit hit - waiting ${waitTime / 1000} seconds... (attempt ${attemptNumber}) [Adaptive delay now: ${requestThrottle.current.adaptiveDelay}ms]`,
                     "warning"
                   );
                   await new Promise((resolve) => setTimeout(resolve, waitTime));
@@ -1471,16 +1477,18 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                   requestThrottle.current.adaptiveDelay * 0.9
                 );
               }
-              
+
               if (response.status === 400) {
                 // Log 400 errors for debugging
-                const errorBody = await response.text().catch(() => "Unknown error");
+                const errorBody = await response
+                  .text()
+                  .catch(() => "Unknown error");
                 addLog(
                   `❌ Bad Request (400) for ${address}: ${errorBody.substring(0, 200)}`,
                   "error"
                 );
               }
-              
+
               throw new Error(
                 `HTTP ${response.status}: ${response.statusText}`
               );
@@ -1620,18 +1628,30 @@ export function useMLSProcessorOptimized(userId?: string | null) {
               `❌ Fallback request failed for: ${address} - ${(fallbackError as Error).message}`,
               "error"
             );
-            
+
             // Final fallback to manual database
-            const manualData = getManualCommunityData(city || "Unknown", county || "Unknown");
-            if (manualData && (manualData.community || manualData.neighborhood)) {
+            const manualData = getManualCommunityData(
+              city || "Unknown",
+              county || "Unknown"
+            );
+            if (
+              manualData &&
+              (manualData.community || manualData.neighborhood)
+            ) {
               if (optimizedResult.data) {
                 optimizedResult.data = {
                   ...optimizedResult.data,
-                  community: manualData.community || optimizedResult.data?.community || null,
-                  neighborhood: manualData.neighborhood || optimizedResult.data?.neighborhood || null,
+                  community:
+                    manualData.community ||
+                    optimizedResult.data?.community ||
+                    null,
+                  neighborhood:
+                    manualData.neighborhood ||
+                    optimizedResult.data?.neighborhood ||
+                    null,
                   confidence: 0.3, // Lower confidence for manual data
                 };
-                
+
                 addLog(
                   `🎯 Final manual database fallback found data for: ${address}`,
                   "info"
@@ -1771,10 +1791,16 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                 `⚠️ Skipping Gemini for "${address}" - missing city (${city}) or county (${county})`,
                 "warning"
               );
-              
+
               // Try manual community database as fallback
-              const manualData = getManualCommunityData(city || "", county || "");
-              if (manualData && (manualData.community || manualData.neighborhood)) {
+              const manualData = getManualCommunityData(
+                city || "",
+                county || ""
+              );
+              if (
+                manualData &&
+                (manualData.community || manualData.neighborhood)
+              ) {
                 if (manualData.neighborhood && !existingNeighborhoods) {
                   result.neighborhoods = manualData.neighborhood;
                   result.neighborhood_source = "Manual Database";
@@ -1798,56 +1824,56 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                 county
               );
 
-            // Debug: Log Gemini processing result
-            console.log("🏘️ [DEBUG] Processing Gemini Result:", {
-              address: `${address}, ${city}, ${county}`,
-              geminiSuccess: geminiResult.success,
-              geminiData: geminiResult.data,
-              community: geminiResult.data?.community,
-              neighborhood: geminiResult.data?.neighborhood,
-              cached: geminiResult.cached,
-              existingCommunities,
-              existingNeighborhoods,
-            });
-
-            if (geminiResult.success && geminiResult.data) {
-              // Only use Gemini neighborhood if not from Excel and not from Mapbox
-              if (
-                !existingNeighborhoods &&
-                geminiResult.data.neighborhood &&
-                !mapboxResult.data.neighborhood
-              ) {
-                result.neighborhoods = geminiResult.data.neighborhood;
-                result.neighborhood_source = geminiResult.cached
-                  ? "Cache"
-                  : "Gemini";
-              }
-
-              // Only use Gemini community if not from Excel
-              if (!existingCommunities && geminiResult.data.community) {
-                const communityValue = geminiResult.data.community;
-                result.comunidades = communityValue;
-                result["Community"] = communityValue;
-                result["Community Source"] = geminiResult.cached
-                  ? "Cache"
-                  : "Gemini";
-                result.community_source = geminiResult.cached
-                  ? "Cache"
-                  : "Gemini";
-              }
-
-              // Debug: Log community assignment
-              console.log("🏘️ [DEBUG] Community Assignment:", {
+              // Debug: Log Gemini processing result
+              console.log("🏘️ [DEBUG] Processing Gemini Result:", {
                 address: `${address}, ${city}, ${county}`,
+                geminiSuccess: geminiResult.success,
+                geminiData: geminiResult.data,
+                community: geminiResult.data?.community,
+                neighborhood: geminiResult.data?.neighborhood,
+                cached: geminiResult.cached,
                 existingCommunities,
-                geminiCommunity: geminiResult.data.community,
-                finalCommunity: result["Community"],
-                communitySource: result["Community Source"],
-                rawGeminiResponse: geminiResult,
-                processingStep: "mapbox_success_with_gemini",
+                existingNeighborhoods,
               });
+
+              if (geminiResult.success && geminiResult.data) {
+                // Only use Gemini neighborhood if not from Excel and not from Mapbox
+                if (
+                  !existingNeighborhoods &&
+                  geminiResult.data.neighborhood &&
+                  !mapboxResult.data.neighborhood
+                ) {
+                  result.neighborhoods = geminiResult.data.neighborhood;
+                  result.neighborhood_source = geminiResult.cached
+                    ? "Cache"
+                    : "Gemini";
+                }
+
+                // Only use Gemini community if not from Excel
+                if (!existingCommunities && geminiResult.data.community) {
+                  const communityValue = geminiResult.data.community;
+                  result.comunidades = communityValue;
+                  result["Community"] = communityValue;
+                  result["Community Source"] = geminiResult.cached
+                    ? "Cache"
+                    : "Gemini";
+                  result.community_source = geminiResult.cached
+                    ? "Cache"
+                    : "Gemini";
+                }
+
+                // Debug: Log community assignment
+                console.log("🏘️ [DEBUG] Community Assignment:", {
+                  address: `${address}, ${city}, ${county}`,
+                  existingCommunities,
+                  geminiCommunity: geminiResult.data.community,
+                  finalCommunity: result["Community"],
+                  communitySource: result["Community Source"],
+                  rawGeminiResponse: geminiResult,
+                  processingStep: "mapbox_success_with_gemini",
+                });
+              }
             }
-          }
           }
 
           result.api_source =
@@ -1873,10 +1899,16 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                   `⚠️ Skipping Gemini fallback for "${address}" - missing city (${city}) or county (${county})`,
                   "warning"
                 );
-                
+
                 // Try manual community database as final fallback
-                const manualData = getManualCommunityData(city || "", county || "");
-                if (manualData && (manualData.community || manualData.neighborhood)) {
+                const manualData = getManualCommunityData(
+                  city || "",
+                  county || ""
+                );
+                if (
+                  manualData &&
+                  (manualData.community || manualData.neighborhood)
+                ) {
                   if (manualData.neighborhood && !existingNeighborhoods) {
                     result.neighborhoods = manualData.neighborhood;
                     result.neighborhood_source = "Manual Database";
@@ -1896,50 +1928,53 @@ export function useMLSProcessorOptimized(userId?: string | null) {
                   county
                 );
 
-              if (geminiResult.success && geminiResult.data) {
-                // Use Gemini neighborhood if not from Excel
-                if (!existingNeighborhoods && geminiResult.data.neighborhood) {
-                  result.neighborhoods = geminiResult.data.neighborhood;
-                  result.neighborhood_source = geminiResult.cached
-                    ? "Cache"
-                    : "Gemini";
-                }
-
-                // Use Gemini community if not from Excel
-                if (!existingCommunities && geminiResult.data.community) {
-                  const communityValue = geminiResult.data.community;
-                  result.comunidades = communityValue;
-                  result["Community"] = communityValue;
-                  result["Community Source"] = geminiResult.cached
-                    ? "Cache"
-                    : "Gemini";
-                  result.community_source = geminiResult.cached
-                    ? "Cache"
-                    : "Gemini";
-                }
-
-                // Debug: Log community assignment for mapbox failure case
-                console.log(
-                  "🏘️ [DEBUG] Community Assignment (Mapbox Failed):",
-                  {
-                    address: `${address}, ${city}, ${county}`,
-                    existingCommunities,
-                    geminiCommunity: geminiResult.data.community,
-                    finalCommunity: result["Community"],
-                    communitySource: result["Community Source"],
-                    rawGeminiResponse: geminiResult,
-                    processingStep: "mapbox_failed_gemini_only",
+                if (geminiResult.success && geminiResult.data) {
+                  // Use Gemini neighborhood if not from Excel
+                  if (
+                    !existingNeighborhoods &&
+                    geminiResult.data.neighborhood
+                  ) {
+                    result.neighborhoods = geminiResult.data.neighborhood;
+                    result.neighborhood_source = geminiResult.cached
+                      ? "Cache"
+                      : "Gemini";
                   }
-                );
 
-                result.api_source = "Gemini Only (No Coordinates)";
-                addLog(
-                  `✅ Got neighborhood/community from Gemini for: ${address}`,
-                  "info"
-                );
-              } else {
-                addLog(`❌ Gemini also failed for: ${address}`, "error");
-              }
+                  // Use Gemini community if not from Excel
+                  if (!existingCommunities && geminiResult.data.community) {
+                    const communityValue = geminiResult.data.community;
+                    result.comunidades = communityValue;
+                    result["Community"] = communityValue;
+                    result["Community Source"] = geminiResult.cached
+                      ? "Cache"
+                      : "Gemini";
+                    result.community_source = geminiResult.cached
+                      ? "Cache"
+                      : "Gemini";
+                  }
+
+                  // Debug: Log community assignment for mapbox failure case
+                  console.log(
+                    "🏘️ [DEBUG] Community Assignment (Mapbox Failed):",
+                    {
+                      address: `${address}, ${city}, ${county}`,
+                      existingCommunities,
+                      geminiCommunity: geminiResult.data.community,
+                      finalCommunity: result["Community"],
+                      communitySource: result["Community Source"],
+                      rawGeminiResponse: geminiResult,
+                      processingStep: "mapbox_failed_gemini_only",
+                    }
+                  );
+
+                  result.api_source = "Gemini Only (No Coordinates)";
+                  addLog(
+                    `✅ Got neighborhood/community from Gemini for: ${address}`,
+                    "info"
+                  );
+                } else {
+                  addLog(`❌ Gemini also failed for: ${address}`, "error");
+                }
               }
             } catch (geminiError) {
               addLog(
@@ -2688,21 +2723,30 @@ export function useMLSProcessorOptimized(userId?: string | null) {
 
         // Apply adaptive configuration based on file size
         const adaptiveConfig = getOptimizedConfigForSize(excelData.length);
-        
+
         // Detect CPU cores for logging
-        const cpuCores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
+        const cpuCores =
+          typeof navigator !== "undefined"
+            ? navigator.hardwareConcurrency || 4
+            : 4;
         const is8CorePlus = cpuCores >= 8;
-        
+
         // Adjust config based on file size for ultra-large files
         if (excelData.length > 50000) {
-          adaptiveConfig.CONCURRENCY_LIMIT = Math.max(2, adaptiveConfig.CONCURRENCY_LIMIT - 2);
-          adaptiveConfig.BATCH_SIZE = Math.max(20, adaptiveConfig.BATCH_SIZE - 10);
+          adaptiveConfig.CONCURRENCY_LIMIT = Math.max(
+            2,
+            adaptiveConfig.CONCURRENCY_LIMIT - 2
+          );
+          adaptiveConfig.BATCH_SIZE = Math.max(
+            20,
+            adaptiveConfig.BATCH_SIZE - 10
+          );
           addLog(
             `📊 Ultra-large file detected (${excelData.length} records) - Using conservative settings`,
             "info"
           );
         }
-        
+
         setBatchConfig((prev) => ({
           ...prev,
           batchSize: adaptiveConfig.BATCH_SIZE,
@@ -2715,7 +2759,7 @@ export function useMLSProcessorOptimized(userId?: string | null) {
         // Log the adaptive configuration applied
         addLog(`⚙️ Auto-configured for ${excelData.length} records:`, "info");
         addLog(
-          `   � CPU Cores: ${cpuCores} | Optimized: ${is8CorePlus ? 'Yes (8+ cores)' : 'No (< 8 cores)'}`,
+          `   � CPU Cores: ${cpuCores} | Optimized: ${is8CorePlus ? "Yes (8+ cores)" : "No (< 8 cores)"}`,
           "info"
         );
         addLog(
