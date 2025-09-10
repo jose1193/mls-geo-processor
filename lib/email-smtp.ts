@@ -36,30 +36,7 @@ export async function sendOTPEmailSMTP(
   otp: string
 ): Promise<boolean> {
   try {
-    console.log(`[EMAIL-SMTP] Attempting to send OTP to ${email}`);
-    console.log(`[EMAIL-SMTP] Environment check - NODE_ENV: ${process.env.NODE_ENV}`);
-    console.log(`[EMAIL-SMTP] SMTP Config - Email: ${process.env.SMTP_EMAIL ? '✓ Set' : '✗ Missing'}`);
-    console.log(`[EMAIL-SMTP] SMTP Config - Password: ${process.env.SMTP_PASSWORD ? '✓ Set' : '✗ Missing'}`);
-    
     const transporter = createTransporter();
-
-    // Test de conexión SMTP específico para Railway
-    console.log(`[EMAIL-SMTP] Testing SMTP connection...`);
-    
-    // Timeout para evitar que se cuelgue en Railway
-    const connectionTimeout = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('SMTP connection timeout')), 10000)
-    );
-    
-    const verifyConnection = transporter.verify();
-    
-    try {
-      await Promise.race([verifyConnection, connectionTimeout]);
-      console.log(`[EMAIL-SMTP] ✅ SMTP connection verified successfully`);
-    } catch (verifyError) {
-      console.error(`[EMAIL-SMTP] ❌ SMTP connection failed:`, verifyError);
-      throw new Error(`SMTP connection failed: ${verifyError instanceof Error ? verifyError.message : 'Unknown error'}`);
-    }
 
     const mailOptions = {
       from: `"MLS Processor" <${process.env.SMTP_EMAIL}>`,
@@ -102,26 +79,11 @@ export async function sendOTPEmailSMTP(
       `,
     };
 
-    console.log(`[EMAIL-SMTP] Sending email with options:`, {
-      from: mailOptions.from,
-      to: mailOptions.to,
-      subject: mailOptions.subject
-    });
-
     const info = await transporter.sendMail(mailOptions);
-    console.log("[EMAIL-SMTP] ✅ OTP email sent successfully via SMTP:", info.messageId);
-    console.log("[EMAIL-SMTP] Response info:", info.response);
+    console.log("OTP email sent successfully via SMTP:", info.messageId);
     return true;
   } catch (error) {
-    console.error("[EMAIL-SMTP] ❌ Error sending OTP email via SMTP:", error);
-    
-    // Log más detalles del error para Railway debugging
-    if (error instanceof Error) {
-      console.error("[EMAIL-SMTP] Error name:", error.name);
-      console.error("[EMAIL-SMTP] Error message:", error.message);
-      console.error("[EMAIL-SMTP] Error stack:", error.stack);
-    }
-    
+    console.error("Error sending OTP email via SMTP:", error);
     return false;
   }
 }

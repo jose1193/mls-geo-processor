@@ -20,16 +20,13 @@ export default auth(async function middleware(request: NextRequest) {
   // En NextAuth v5, la sesión ya está disponible en request.auth
   const session = (request as NextRequest & { auth?: Session | null }).auth;
 
-  // Debugging para Railway - más detalles cuando hay errores
-  if (process.env.NODE_ENV === "production" || process.env.RAILWAY_ENVIRONMENT === "production") {
+  // Debugging para Railway - solo en producción para no saturar logs de desarrollo
+  if (process.env.NODE_ENV === "production") {
     console.log(
       `[MIDDLEWARE] Path: ${pathname}, Session exists: ${!!session}, URL: ${request.url}`
     );
     console.log(`[MIDDLEWARE] ENV - AUTH_URL: ${process.env.AUTH_URL}`);
     console.log(`[MIDDLEWARE] ENV - NEXTAUTH_URL: ${process.env.NEXTAUTH_URL}`);
-    console.log(`[MIDDLEWARE] ENV - AUTH_TRUST_HOST: ${process.env.AUTH_TRUST_HOST}`);
-    console.log(`[MIDDLEWARE] Headers - Host: ${request.headers.get("host")}`);
-    console.log(`[MIDDLEWARE] Headers - Origin: ${request.headers.get("origin")}`);
   }
 
   // Si usuario está logueado e intenta acceder al login, redirigir al dashboard
