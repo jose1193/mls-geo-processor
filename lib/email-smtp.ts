@@ -36,6 +36,11 @@ export async function sendOTPEmailSMTP(
   otp: string
 ): Promise<boolean> {
   try {
+    console.log(`[EMAIL-SMTP] Attempting to send OTP to ${email}`);
+    console.log(`[EMAIL-SMTP] Environment check - NODE_ENV: ${process.env.NODE_ENV}`);
+    console.log(`[EMAIL-SMTP] SMTP Config - Email: ${process.env.SMTP_EMAIL ? '✓ Set' : '✗ Missing'}`);
+    console.log(`[EMAIL-SMTP] SMTP Config - Password: ${process.env.SMTP_PASSWORD ? '✓ Set' : '✗ Missing'}`);
+    
     const transporter = createTransporter();
 
     const mailOptions = {
@@ -79,11 +84,26 @@ export async function sendOTPEmailSMTP(
       `,
     };
 
+    console.log(`[EMAIL-SMTP] Sending email with options:`, {
+      from: mailOptions.from,
+      to: mailOptions.to,
+      subject: mailOptions.subject
+    });
+
     const info = await transporter.sendMail(mailOptions);
-    console.log("OTP email sent successfully via SMTP:", info.messageId);
+    console.log("[EMAIL-SMTP] ✅ OTP email sent successfully via SMTP:", info.messageId);
+    console.log("[EMAIL-SMTP] Response info:", info.response);
     return true;
   } catch (error) {
-    console.error("Error sending OTP email via SMTP:", error);
+    console.error("[EMAIL-SMTP] ❌ Error sending OTP email via SMTP:", error);
+    
+    // Log más detalles del error para Railway debugging
+    if (error instanceof Error) {
+      console.error("[EMAIL-SMTP] Error name:", error.name);
+      console.error("[EMAIL-SMTP] Error message:", error.message);
+      console.error("[EMAIL-SMTP] Error stack:", error.stack);
+    }
+    
     return false;
   }
 }

@@ -10,17 +10,27 @@ export async function sendOTPEmail(
   otp: string
 ): Promise<boolean> {
   try {
+    console.log(`[EMAIL] Starting OTP send process for ${email}`);
+    console.log(`[EMAIL] Environment - NODE_ENV: ${process.env.NODE_ENV}`);
+    console.log(`[EMAIL] Email providers - SMTP: ${process.env.SMTP_EMAIL ? '✓' : '✗'}, Resend: ${process.env.RESEND_API_KEY ? '✓' : '✗'}`);
+    
     // Primero intentar con SMTP
-    console.log("Attempting to send OTP via SMTP...");
+    console.log("[EMAIL] Attempting to send OTP via SMTP...");
     const smtpSuccess = await sendOTPEmailSMTP(email, otp);
 
     if (smtpSuccess) {
-      console.log("OTP sent successfully via SMTP");
+      console.log("[EMAIL] ✅ OTP sent successfully via SMTP");
       return true;
     }
 
-    // Si SMTP falla, usar Resend como fallback (solo para testing)
-    console.log("SMTP failed, falling back to Resend...");
+    // Si SMTP falla, usar Resend como fallback
+    console.log("[EMAIL] ⚠️ SMTP failed, falling back to Resend...");
+    
+    if (!process.env.RESEND_API_KEY) {
+      console.error("[EMAIL] ❌ No Resend API key available for fallback");
+      return false;
+    }
+    
     const { data, error } = await resend.emails.send({
       from: "MLS Processor <onboarding@resend.dev>",
       to: [email],
@@ -63,14 +73,24 @@ export async function sendOTPEmail(
     });
 
     if (error) {
-      console.error("Error sending email:", error);
+      console.error("[EMAIL] ❌ Error sending email via Resend:", error);
       return false;
     }
 
-    console.log("OTP email sent successfully:", data?.id);
+    console.log("[EMAIL] ✅ OTP email sent successfully via Resend:", data?.id);
     return true;
   } catch (error) {
-    console.error("Error sending OTP email:", error);
+    console.error("[EMAIL] ❌ Error in sendOTPEmail:", error);
+    
+    // Log más detalles del error
+    if (error instanceof Error) {
+      console.error("[EMAIL] Error details:", {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
+    }
+    
     return false;
   }
 }

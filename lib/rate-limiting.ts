@@ -1,6 +1,11 @@
 import { RateLimiterMemory } from "rate-limiter-flexible";
 import { NextRequest } from "next/server";
 
+// Detectar entorno Railway una sola vez
+const isRailway =
+  process.env.RAILWAY_ENVIRONMENT === "production" ||
+  process.env.NODE_ENV === "production";
+
 // Rate limiters para diferentes endpoints
 export const loginAttemptLimiter = new RateLimiterMemory({
   points: 5, // 5 intentos
@@ -8,10 +13,11 @@ export const loginAttemptLimiter = new RateLimiterMemory({
   blockDuration: 900, // Bloquear por 15 minutos
 });
 
+// Rate limiter para OTP más permisivo en Railway
 export const otpRequestLimiter = new RateLimiterMemory({
-  points: 3, // 3 códigos OTP
-  duration: 300, // Por 5 minutos
-  blockDuration: 300, // Bloquear por 5 minutos
+  points: isRailway ? 10 : 3, // Railway: 10 intentos vs localhost: 3
+  duration: isRailway ? 600 : 300, // Railway: 10 min vs localhost: 5 min
+  blockDuration: isRailway ? 60 : 300, // Railway: 1 min vs localhost: 5 min
 });
 
 export const generalAPILimiter = new RateLimiterMemory({
@@ -21,10 +27,6 @@ export const generalAPILimiter = new RateLimiterMemory({
 });
 
 // Rate limiter específico para APIs de geocoding (adaptativo según ambiente)
-const isRailway =
-  process.env.RAILWAY_ENVIRONMENT === "production" ||
-  process.env.NODE_ENV === "production";
-
 export const geocodingAPILimiter = new RateLimiterMemory({
   points: isRailway ? 12000 : 1200, // Increased from 8000/800 for large file processing
   duration: 900, // Por 15 minutos
@@ -75,11 +77,11 @@ export async function applyRateLimit(
   }
 }
 
-// Rate limiting específico por email para OTP
+// Rate limiting específico por email para OTP (más permisivo en Railway)
 export const otpEmailLimiter = new RateLimiterMemory({
-  points: 5, // 5 códigos OTP por email
-  duration: 3600, // Por 1 hora
-  blockDuration: 3600, // Bloquear por 1 hora
+  points: isRailway ? 8 : 5, // Railway: 8 códigos vs localhost: 5
+  duration: isRailway ? 1800 : 3600, // Railway: 30 min vs localhost: 1 hora
+  blockDuration: isRailway ? 600 : 3600, // Railway: 10 min vs localhost: 1 hora
 });
 
 // Rate limiting para verificación de OTP
