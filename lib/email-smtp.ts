@@ -22,7 +22,9 @@ export async function sendOTPEmailSMTP(
   email: string,
   otp: string
 ): Promise<boolean> {
-  console.log("🚀 Starting email sending process with priority: Brevo > Gmail SMTP > Resend");
+  console.log(
+    "🚀 Starting email sending process with priority: Brevo > Gmail SMTP > Resend"
+  );
 
   // 1. PRIMERA OPCIÓN: Brevo API
   try {
@@ -50,7 +52,9 @@ export async function sendOTPEmailSMTP(
 
   // 3. TERCERA OPCIÓN: Resend API (Fallback final)
   try {
-    console.log("📧 Gmail SMTP failed, attempting Resend API as final fallback...");
+    console.log(
+      "📧 Gmail SMTP failed, attempting Resend API as final fallback..."
+    );
     const success = await sendOTPEmailResend(email, otp);
     if (success) {
       console.log("✅ OTP sent successfully via Resend API (fallback)");
@@ -86,7 +90,7 @@ async function sendOTPEmailBrevo(email: string, otp: string): Promise<boolean> {
 
     const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
     const responseData = data.body || data;
-    
+
     console.log("✅ Brevo email sent:", responseData);
     return true;
   } catch (error) {
@@ -96,7 +100,10 @@ async function sendOTPEmailBrevo(email: string, otp: string): Promise<boolean> {
 }
 
 // Función específica para Gmail SMTP
-async function sendOTPEmailGmailSMTP(email: string, otp: string): Promise<boolean> {
+async function sendOTPEmailGmailSMTP(
+  email: string,
+  otp: string
+): Promise<boolean> {
   if (!process.env.SMTP_EMAIL || !process.env.SMTP_PASSWORD) {
     console.log("⚠️ SMTP credentials not configured, skipping Gmail SMTP");
     return false;
@@ -122,7 +129,10 @@ async function sendOTPEmailGmailSMTP(email: string, otp: string): Promise<boolea
 }
 
 // Función específica para Resend API
-async function sendOTPEmailResend(email: string, otp: string): Promise<boolean> {
+async function sendOTPEmailResend(
+  email: string,
+  otp: string
+): Promise<boolean> {
   if (!process.env.RESEND_API_KEY) {
     console.log("⚠️ RESEND_API_KEY not configured, skipping Resend");
     return false;
@@ -183,7 +193,7 @@ function generateOTPEmailHTML(otp: string, provider: string): string {
         <p style="color: #94a3b8; font-size: 12px; margin: 0;">
           © 2025 MLS Processor. Sent via ${provider}.
           <br>
-          ${process.env.RAILWAY_ENVIRONMENT ? '🚂 Railway Environment' : '🏠 Development Environment'}
+          ${process.env.RAILWAY_ENVIRONMENT ? "🚂 Railway Environment" : "🏠 Development Environment"}
         </p>
       </div>
     </div>

@@ -103,6 +103,7 @@ export default auth(async function middleware(request: NextRequest) {
     "/api/test-email",
     "/api/test-email-resend",
     "/api/test-email-brevo",
+    "/api/test-email-gmail",
   ];
 
   // Rutas de API que requieren validación de origen
