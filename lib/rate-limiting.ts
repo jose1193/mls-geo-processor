@@ -77,9 +77,9 @@ export async function applyRateLimit(
 
 // Rate limiting específico por email para OTP
 export const otpEmailLimiter = new RateLimiterMemory({
-  points: 10, // 10 códigos OTP por email (aumentado de 5)
+  points: 5, // 5 códigos OTP por email
   duration: 3600, // Por 1 hora
-  blockDuration: 600, // Bloquear por 10 minutos (reducido de 1 hora)
+  blockDuration: 3600, // Bloquear por 1 hora
 });
 
 // Rate limiting para verificación de OTP
