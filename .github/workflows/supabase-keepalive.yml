@@ -1,0 +1,54 @@
+name: 🚀 Supabase Keepalive
+
+on:
+  schedule:
+    # Ejecutar cada 4 días a las 2:00 AM UTC
+    - cron: "0 2 */4 * *"
+
+  # Permitir ejecución manual
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📋 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🏓 Ping Supabase to keep it active
+        run: |
+          echo "🚀 Starting Supabase keepalive process..."
+          echo "📅 Current date: $(date)"
+          echo "🌐 Target URL: ${{ secrets.KEEPALIVE_URL }}"
+
+          # Hacer request al endpoint de keepalive
+          response=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.KEEPALIVE_SECRET }}" \
+            -H "User-Agent: GitHub-Actions-Keepalive/1.0" \
+            -H "Content-Type: application/json" \
+            "${{ secrets.KEEPALIVE_URL }}/api/keepalive")
+
+          # Separar response body y status code
+          http_code=$(echo "$response" | tail -n1)
+          response_body=$(echo "$response" | head -n -1)
+
+          echo "📊 HTTP Status Code: $http_code"
+          echo "📝 Response Body: $response_body"
+
+          # Verificar si el request fue exitoso
+          if [ "$http_code" -eq 200 ]; then
+            echo "✅ Supabase keepalive successful!"
+            echo "📈 Database connection maintained"
+          else
+            echo "❌ Supabase keepalive failed!"
+            echo "🚨 HTTP Status: $http_code"
+            echo "📋 Response: $response_body"
+            exit 1
+          fi
+
+      - name: 📊 Log completion
+        run: |
+          echo "🎯 Keepalive completed successfully"
+          echo "⏰ Next execution: In 4 days"
+          echo "📅 Next run date: $(date -d '+4 days')"
